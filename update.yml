@@ -1,0 +1,58 @@
+name: 更新處置股資料
+
+on:
+  schedule:
+    # 週一到週五 台灣時間 21:15（UTC 13:15）；注意股、處置公告都已出來
+    - cron: "15 13 * * 1-5"
+  workflow_dispatch: {}        # 網頁上的「更新資料」按鈕 → Run workflow
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+
+      - name: 下載 FinLab 資料
+        env:
+          FINLAB_API_KEY: ${{ secrets.FINLAB_API_KEY }}
+        run: python export_finlab.py
+
+      - name: 計算聽牌狀態、產生網頁
+        run: |
+          mkdir -p site
+          python process.py finlab_export site
+          mv "site/處置股分析.html" site/index.html
+          rm -f site/artifact_body.html
+          touch site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

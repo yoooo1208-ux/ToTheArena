@@ -1,0 +1,8 @@
+finlab_export/
+site/
+finlab_key.txt
+__pycache__/
+*.pyc
+處置股分析.html
+artifact_body.html
+disposal_data.json

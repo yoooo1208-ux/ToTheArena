@@ -1,0 +1,936 @@
+<title>處置股預判與回測</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 交易台式單欄 — 黏頂標頭(標題+新舊制切換) → 分頁 → 每頁「篩選列 → 摘要 → 圖 → 明細表」 */
+:root{
+  --bg:#F3F5F8; --panel:#FFFFFF; --sunk:#EBEEF3; --ink:#18212B; --muted:#5A6676; --faint:#8A95A3; --line:#DCE1E8;
+  --accent:#9C5A00; --accent-ink:#FFFFFF; --accent-soft:#F6E7CF;
+  --up:#C92A2A; --up-soft:#FBE3E1; --down:#18804A; --down-soft:#DDF1E5; --flat:#7C8796;
+  --lv1:#C92A2A; --lv2:#B26B00; --lv3:#4A5A70;
+  --f-display:"Noto Serif TC","Songti TC",serif; --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --f-num:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F141A; --panel:#161D26; --sunk:#1C2531; --ink:#E5EAF0; --muted:#9AA6B4; --faint:#6E7B8A; --line:#283342;
+  --accent:#E3A645; --accent-ink:#1A1206; --accent-soft:#3A2C14;
+  --up:#FF6B61; --up-soft:#3B1E1E; --down:#3CC47F; --down-soft:#15322A; --flat:#8C98A6;
+  --lv1:#FF6B61; --lv2:#E3A645; --lv3:#8FA3BD; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F141A; --panel:#161D26; --sunk:#1C2531; --ink:#E5EAF0; --muted:#9AA6B4; --faint:#6E7B8A; --line:#283342;
+  --accent:#E3A645; --accent-ink:#1A1206; --accent-soft:#3A2C14;
+  --up:#FF6B61; --up-soft:#3B1E1E; --down:#3CC47F; --down-soft:#15322A; --flat:#8C98A6;
+  --lv1:#FF6B61; --lv2:#E3A645; --lv3:#8FA3BD; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.55}
+.num,td.n,th.n{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.wrap{max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding-block:12px 0}
+.brand{display:flex;align-items:baseline;gap:10px;flex:1 1 auto;min-width:0}
+.brand h1{font-family:var(--f-display);font-weight:900;font-size:22px;margin:0;letter-spacing:.02em;text-wrap:balance}
+.brand .asof{color:var(--muted);font-size:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--panel);gap:2px}
+.seg button{border:0;background:transparent;color:var(--muted);font:500 13px var(--f-body);padding:5px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.seg button:focus-visible,.tabs button:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.regime-lbl{font-size:12px;color:var(--muted);margin-right:6px}
+.tabs{display:flex;gap:2px;overflow-x:auto;width:100%;scrollbar-width:none}
+.tabs button{border:0;background:none;color:var(--muted);font:500 14px var(--f-body);padding:10px 14px;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+main{padding-block:20px 60px}
+section.page{display:flex;flex-direction:column;gap:18px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel h2{font-size:15px;margin:0 0 10px;font-weight:700}
+.panel h2 small{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
+.lead{color:var(--muted);margin:0;max-width:72ch;font-size:13px}
+.filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+.f>span{font-size:11px;color:var(--muted);letter-spacing:.04em}
+select,input[type=number],input[type=text]{font:13px var(--f-body);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 8px;min-width:0}
+input[type=number]{width:84px;font-family:var(--f-num)}
+input[type=text]{width:160px;font-family:var(--f-num)}
+label.chk{display:inline-flex;gap:6px;align-items:center;font-size:13px;cursor:pointer}
+.btn{font:500 13px var(--f-body);border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:4px;cursor:pointer}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.ghost{background:transparent}
+.presets{display:flex;flex-wrap:wrap;gap:8px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.kpi{background:var(--panel);padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.kpi b{font:600 20px var(--f-num);font-variant-numeric:tabular-nums}
+.kpi span{font-size:11px;color:var(--muted);letter-spacing:.04em}
+.tw{overflow-x:auto;min-width:0}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font-weight:500;color:var(--muted);font-size:12px;position:sticky;top:0;background:var(--panel)}
+th.n,td.n{text-align:right}
+tbody tr:hover td{background:var(--sunk)}
+tr.click{cursor:pointer}
+.up{color:var(--up)} .down{color:var(--down)} .mut{color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;padding:1px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.chip.l1{color:var(--lv1)} .chip.l2{color:var(--lv2)} .chip.l3{color:var(--lv3)}
+.prog{display:inline-flex;gap:2px;vertical-align:middle}
+.prog i{width:7px;height:12px;border-radius:2px;background:var(--sunk);border:1px solid var(--line)}
+.prog i.on{background:var(--accent);border-color:var(--accent)}
+.prog i.hot{background:var(--lv1);border-color:var(--lv1)}
+.progtxt{font:12px var(--f-num);color:var(--muted);margin-left:4px}
+.cards3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.stat{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+.stat b{font:600 26px var(--f-num)} .stat span{font-size:12px;color:var(--muted)}
+.chart{width:100%;min-width:0;position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart text{fill:var(--muted);font:11px var(--f-num)}
+.chart .lbl{fill:var(--ink)}
+.gridl{stroke:var(--line);stroke-width:1}
+.base{stroke:var(--faint);stroke-width:1}
+#tip{position:fixed;pointer-events:none;z-index:50;background:var(--ink);color:var(--bg);font:12px var(--f-body);padding:6px 9px;border-radius:4px;max-width:280px;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+#tip .num{font-family:var(--f-num)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:18px}
+.note{font-size:12px;color:var(--muted);border-left:3px solid var(--accent);padding:6px 10px;background:var(--accent-soft);border-radius:0 4px 4px 0;max-width:90ch}
+.warn{border-left-color:var(--lv1)}
+.hm td{text-align:center;font:12px var(--f-num);padding:6px 4px;border:1px solid var(--panel)}
+.hm th{text-align:center}
+.prose{max-width:76ch} .prose p,.prose li{font-size:13.5px}
+.prose h3{font-size:14px;margin:18px 0 6px}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:10px 0}
+.rule{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;background:var(--panel)}
+.rule b{display:block;font-family:var(--f-display);font-size:16px}
+.rule span{font-size:12px;color:var(--muted)}
+.progress{height:4px;background:var(--sunk);border-radius:2px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--accent);width:0}
+.tl{display:flex;flex-wrap:wrap;gap:4px;margin-top:14px;align-items:stretch}
+.tl-d{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:44px;padding:6px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel);font-size:12px}
+.tl-d b{font:600 13px var(--f-num)}
+.tl-d em{font-style:normal;font-size:11px;color:var(--accent-ink);background:var(--accent);border-radius:3px;padding:0 4px}
+.tl-d.hold{background:var(--accent-soft);border-color:var(--accent-soft)}
+.tl-d.in,.tl-d.out{border-color:var(--accent);background:var(--accent-soft)}
+.tl-gap{align-self:center;color:var(--muted);padding:0 2px}
+tr.detail>td{background:var(--sunk);white-space:normal;padding:14px}
+tbody tr.detail:hover td{background:var(--sunk)}
+.fcd{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2.4fr) minmax(140px,.8fr);gap:18px}
+@media (max-width:900px){.fcd{grid-template-columns:1fr}}
+.fcd h4{margin:0 0 8px;font-size:13px}
+.fcd .pr{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:13px}
+.fcd .pr>span:first-child{width:84px;color:var(--muted);font-size:12px}
+table.cond th,table.cond td{background:transparent;padding:5px 6px}
+table.cond tr.dim td{opacity:.5}
+ul.hist{list-style:none;margin:0;padding:0;font-size:13px;display:flex;flex-direction:column;gap:4px}
+details summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+tr.subrow td{font-size:12.5px}
+tr.subrow td:first-child{padding-left:20px;color:var(--muted)}
+.eqk{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin:-2px 0 8px}
+.eqk b{font:600 13px var(--f-num);color:var(--ink)}
+.eqk b.up{color:var(--up)} .eqk b.down{color:var(--down)}
+th.grp{text-align:center;color:var(--ink);font-weight:600;border-bottom:1px solid var(--line)}
+th.sep,td.sep{border-left:1px solid var(--line)}
+.ghbtn{padding:3px 10px;font-size:12px;text-decoration:none;align-self:center}
+.empty{color:var(--muted);padding:20px 0;text-align:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (max-width:560px){.brand h1{font-size:19px} .kpi b{font-size:17px}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><h1>處置股預判與回測</h1><span class="asof" id="asof"></span><a class="btn ghbtn" id="ghUpdate" hidden target="_blank" rel="noopener">更新資料</a></div>
+    <div><span class="regime-lbl">分水嶺 8/10 新制</span>
+      <div class="seg" id="regime" role="group" aria-label="新舊制">
+        <button data-v="all" aria-pressed="true">全部</button>
+        <button data-v="old" aria-pressed="false">舊制 8/10 前</button>
+        <button data-v="new" aria-pressed="false">新制 8/10 後</button>
+      </div></div>
+    <nav class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-t="fc" aria-selected="true">今日預判</button>
+      <button role="tab" data-t="day" aria-selected="false">處置逐日統計</button>
+      <button role="tab" data-t="bt" aria-selected="false">策略回測</button>
+      <button role="tab" data-t="opt" aria-selected="false">參數最佳化</button>
+      <button role="tab" data-t="rule" aria-selected="false">規則與驗證</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+<!-- ===================== 今日預判 ===================== -->
+<section class="page" id="p-fc">
+  <div class="cards3" id="fcStats"></div>
+  <div class="panel">
+    <h2>差 1 次就處置 <small id="fc1sub"></small></h2>
+    <p class="lead">每一檔列出「明天收盤後哪些條件成立就會被公布注意」，以及這次注意會不會直接讓它進處置。觸發價依交易所規則估算（6 日漲跌幅為每日漲跌幅加總，已依升降單位進位），點一列可展開條件明細。</p>
+    <div class="filters" style="margin:10px 0">
+      <label class="chk"><input type="checkbox" id="fcShowInd"> 顯示處置中仍聽牌者</label>
+      <button class="btn" id="fcCopy">複製清單（LINE 轉貼）</button>
+      <span class="mut" id="fcCopyMsg" style="font-size:12px"></span>
+    </div>
+    <div class="tw"><table id="fc1"></table></div>
+  </div>
+  <div class="panel">
+    <h2>差 2 次處置 <small>明天被注意會變成差 1 次；第 1 款路線需連 2 日</small></h2>
+    <div class="tw"><table id="fc2"></table></div>
+  </div>
+  <div class="panel">
+    <h2>處置中 <small>明天是第幾天、歷史上那一天的表現（依上方所選制度）；日期帶＊為依交易日推估</small></h2>
+    <div class="tw"><table id="fc3"></table></div>
+  </div>
+  <textarea id="fcCopyBox" hidden readonly style="width:100%;height:160px;font:12px var(--f-num)"></textarea>
+</section>
+
+<!-- ===================== 逐日統計 ===================== -->
+<section class="page" id="p-day" hidden>
+  <div class="panel">
+    <div class="filters">
+      <label class="f"><span>報酬口徑</span><select id="dMetric">
+        <option value="cc">收盤對收盤（昨收→今收）</option>
+        <option value="oc">開盤到收盤（當沖多；空方取負）</option>
+        <option value="gap">跳空（昨收→今開）</option>
+        <option value="cum">累積（觸發日收盤→當日收盤）</option>
+      </select></label>
+      <label class="f"><span>對齊方式</span><select id="dAlign">
+        <option value="fwd">從第 1 天往後數</option>
+        <option value="back">從最後一天倒數</option>
+      </select></label>
+      <label class="f"><span>處置次數</span><select id="dOrd"><option value="0">全部</option><option value="1">第一次</option><option value="2">再次處置</option></select></label>
+      <label class="f"><span>市場</span><select id="dMkt"><option value="">全部</option><option>上市</option><option>上櫃</option></select></label>
+      <label class="f"><span>處置天數</span><select id="dLen"><option value="0">全部</option><option value="5">5 天</option><option value="7">7 天</option><option value="10">10 天</option><option value="12">12 天</option></select></label>
+      <label class="f"><span>起始年</span><select id="dYear"></select></label>
+    </div>
+  </div>
+  <div class="kpis" id="dKpi"></div>
+  <div class="two">
+    <div class="panel"><h2>上漲機率 <small>以 50% 為中線，紅=偏漲 綠=偏跌</small></h2><div class="chart" id="dChartP"></div></div>
+    <div class="panel"><h2>平均報酬 <small id="dChartMsub">%</small></h2><div class="chart" id="dChartM"></div></div>
+  </div>
+  <div class="panel"><h2>逐日明細 <small>T=觸發日（公告處置當天），D1=處置第一天</small></h2><div class="tw"><table id="dTable"></table></div></div>
+</section>
+
+<!-- ===================== 回測 ===================== -->
+<section class="page" id="p-bt" hidden>
+  <div class="panel">
+    <h2>策略設定</h2>
+    <p class="lead">以觸發日 T 為基準：T-1 是聽牌日，T 是再被注意、收盤後公告處置的那天，D1 是處置第一天，DL 是處置最後一天，X1 是出關後第一天。</p>
+    <div class="filters" id="btForm" style="margin-top:12px">
+      <label class="f"><span>樣本</span><select id="bSrc"><option value="evt">實際進處置（T＝觸發日）</option><option value="sig">所有聽牌（T＝聽牌隔天，不論有無進處置）</option></select></label>
+      <label class="f"><span>方向</span><select id="bDir"><option value="-1">做空</option><option value="1">做多</option></select></label>
+      <label class="f"><span>進場日</span><select id="bInD"></select></label>
+      <label class="f"><span>進場價</span><select id="bInP"><option value="c">收盤價</option><option value="o">開盤價</option></select></label>
+      <label class="f"><span>出場日</span><select id="bOutD"></select></label>
+      <label class="f"><span>出場價</span><select id="bOutP"><option value="c">收盤價</option><option value="o">開盤價</option></select></label>
+      <label class="f"><span>停損 %（0＝不設）</span><input type="number" id="bSL" value="0" min="0" step="0.5"></label>
+      <label class="f"><span>停利 %（0＝不設）</span><input type="number" id="bTP" value="0" min="0" step="0.5"></label>
+      <label class="f"><span>來回成本 %</span><input type="number" id="bCost" value="0.4" min="0" step="0.05"></label>
+    </div>
+    <div class="tl" id="btTL" aria-label="時間軸"></div>
+    <div class="filters" style="margin-top:12px">
+      <label class="f"><span>處置次數</span><select id="bEvtOrd"><option value="0">全部</option><option value="1">第一次處置</option><option value="2">再次處置</option></select></label>
+      <label class="f"><span>市場</span><select id="bMkt"><option value="">全部</option><option>上市</option><option>上櫃</option></select></label>
+      <label class="f"><span>股票期貨</span><select id="bFut"><option value="">全部</option><option value="1">有股期</option><option value="0">無股期</option></select></label>
+    </div>
+    <details style="margin-top:8px"><summary class="mut" style="cursor:pointer;font-size:13px">其他篩選</summary>
+      <div class="filters" style="margin-top:10px">
+        <label class="f"><span>最低股價</span><input type="number" id="bPx" value="10" min="0"></label>
+        <label class="f"><span>最低 20 日均量（張）</span><input type="number" id="bVol" value="300" min="0"></label>
+        <label class="f"><span>起始年</span><select id="bYear"></select></label>
+      </div>
+    </details>
+    <div class="presets" style="margin-top:12px">
+      <button class="btn" data-preset="d1dt">D1 開→D1 收 空（處置首日當沖）</button>
+      <button class="btn" data-preset="tc_d1c">T 收→D1 收 空</button>
+      <button class="btn" data-preset="tc_d2c">T 收→D2 收 空</button>
+      <button class="btn" data-preset="t1c_tc">T-1 收→T 收 空（聽牌日收盤空）</button>
+      <button class="btn" data-preset="sigdt">所有聽牌：T 開→T 收 空</button>
+    </div>
+    <p class="note" id="btNote" style="margin-top:12px"></p>
+  </div>
+  <div class="kpis" id="bKpi"></div>
+  <div class="panel"><h2>分類比較 <small id="bGrpSub">同一組進出場設定，依處置次數、市場、有無股期拆開看（不受上面三個分類篩選影響）</small></h2><div class="tw"><table id="bGrp"></table></div></div>
+  <div class="two">
+    <div class="panel"><h2>累積報酬・舊制 <small>8/10 前（每筆等額、單利加總，依出場日排序）</small></h2><div class="eqk" id="bEqOldK"></div><div class="chart" id="bEqOld"></div></div>
+    <div class="panel"><h2>累積報酬・新制 <small>8/10 起</small></h2><div class="eqk" id="bEqNewK"></div><div class="chart" id="bEqNew"></div></div>
+  </div>
+  <div class="two">
+    <div class="panel"><h2>單筆報酬分布 <small>依上方分水嶺所選制度，%</small></h2><div class="chart" id="bHist"></div></div>
+    <div class="panel"><h2>出場原因</h2><div class="tw"><table id="bExitT"></table></div></div>
+  </div>
+  <div class="panel"><h2>逐年</h2><div class="tw"><table id="bYearT"></table></div></div>
+  <div class="panel"><h2>交易明細 <small>最近 150 筆</small></h2><div class="tw" style="max-height:460px;overflow:auto"><table id="bTrades"></table></div></div>
+</section>
+
+<!-- ===================== 最佳化 ===================== -->
+<section class="page" id="p-opt" hidden>
+  <div class="panel">
+    <h2>參數格點搜尋</h2>
+    <p class="lead">沿用「策略回測」的樣本、成本與篩選條件（處置次數、市場、股期等），方向在這裡另外選，把下面每個進場 × 出場 × 停損 × 停利組合都跑一次。排序依上方分水嶺所選制度，表格同時列出舊制與新制，方便看參數在新制下還成不成立。</p>
+    <div class="filters" style="margin-top:12px">
+      <label class="f"><span>方向</span><select id="oDir"><option value="-1">做空</option><option value="1">做多</option><option value="both">做多＋做空都測</option></select></label>
+      <label class="f"><span>進場（逗號分隔）</span><input type="text" id="oEntry" value="T-1c,Tc,D1o" style="width:200px"></label>
+      <label class="f"><span>出場</span><input type="text" id="oExit" value="Tc,D1c,D2c,D3c,D5c,DLc" style="width:220px"></label>
+      <label class="f"><span>停損 %</span><input type="text" id="oSL" value="0,3,5,8"></label>
+      <label class="f"><span>停利 %</span><input type="text" id="oTP" value="0,3,5,10,15"></label>
+      <label class="f"><span>排序指標</span><select id="oMetric"><option value="avg">平均報酬</option><option value="t">t 值（穩定度）</option><option value="pf">獲利因子</option><option value="win">勝率</option><option value="sumOld">舊制累積報酬</option><option value="sumNew">新制累積報酬</option></select></label>
+      <label class="f"><span>最少交易數</span><input type="number" id="oMin" value="30" min="1"></label>
+      <button class="btn primary" id="oRun">開始搜尋</button>
+    </div>
+    <p class="mut" style="font-size:12px;margin:8px 0 0">寫法：日期代碼＋o（開盤）或 c（收盤）。日期代碼：T-5～T-1、T、D1～D12、DL（處置最後一天）、X1～X3（出關後第幾天）。例：T-1c＝聽牌日收盤，D1o＝處置第一天開盤。</p>
+    <div class="progress" style="margin-top:10px"><i id="oProg"></i></div>
+  </div>
+  <div class="panel"><h2>最佳組合 <small id="oSub">點一列可帶回「策略回測」</small></h2><div class="tw"><table id="oTable"></table></div></div>
+  <div class="panel"><h2>熱圖：出場日 × 停損 <small id="oHmSub"></small></h2><div class="tw"><table class="hm" id="oHm"></table></div></div>
+</section>
+
+<!-- ===================== 規則 ===================== -->
+<section class="page" id="p-rule" hidden>
+  <div class="panel prose">
+    <h2>聽牌怎麼算</h2>
+    <p>以下四條任一成立即進處置（第 1～8 款注意都可累計，「連 3 日」只看第 1 款）。本頁以每檔股票每天收盤後的注意紀錄，往回數出距離觸發還差幾次：</p>
+    <div class="rules">
+      <div class="rule"><b>連 3 日第 1 款</b><span>6 日累積漲跌幅異常，連續 3 個營業日。已連 2 日 → 聽牌（但隔天必須再是第 1 款）</span></div>
+      <div class="rule"><b>連 5 日</b><span>連續 5 個營業日被公布注意。已連 4 日 → 聽牌</span></div>
+      <div class="rule"><b>10 日內 6 次</b><span>最近 10 個營業日有 6 日注意。前 9 日已有 5 次 → 聽牌</span></div>
+      <div class="rule"><b>30 日內 12 次</b><span>最近 30 個營業日有 12 日注意。前 29 日已有 11 次 → 聽牌</span></div>
+    </div>
+    <h3>注意股主要門檻（由公告反推驗證）</h3>
+    <div class="tw"><table style="max-width:680px"><thead><tr><th>款別</th><th>上市</th><th>上櫃</th></tr></thead><tbody>
+      <tr><td>第一款 6日漲跌幅（每日漲跌幅加總）</td><td>&gt;32%，或 &gt;25% 且 6日價差 ≥50 元</td><td>&gt;30%，或 &gt;23% 且 6日價差 ≥40 元</td></tr>
+      <tr><td>第二款 30/60/90 日起迄漲幅</td><td>&gt;100% / 130% / 160%</td><td>&gt;100% / 140% / 160%</td></tr>
+      <tr><td>第三款 6日漲跌 + 量</td><td>&gt;25% 且量 ≥ 60日均量 5 倍</td><td>&gt;27% 且量 ≥ 60日均量 5 倍</td></tr>
+      <tr><td>第四款 6日漲跌 + 週轉率</td><td>&gt;25% 且週轉率 ≥10%</td><td>&gt;27% 且週轉率 ≥5%</td></tr>
+      <tr><td>第五款 6日漲跌 + 單一券商</td><td>&gt;25% 且單一券商 &gt;25%</td><td>&gt;27% 且單一券商 &gt;20%</td></tr>
+      <tr><td>第六款 估值 + 週轉</td><td>本益比 ≥60 或虧損、淨值比 ≥6、週轉率 ≥5%、量 ≥3,000 張，且淨值比 ≥ 產業 4 倍或單一券商／投資人 ≥10% 且 ≥1 億</td><td>同左，淨值比 ≥5、量 ≥2,000 張</td></tr>
+      <tr><td>第七款 融資券</td><td>6日 &gt;25%，前一日券資比 ≥20% 且為 6 日最低 4 倍、融資使用率 ≥25%、融券使用率 ≥15%</td><td>6日 &gt;27%，融券使用率 ≥10%，其餘同左</td></tr></tbody></table></div>
+    <p>時間軸：聽牌日 t 收盤後確認狀態 → t+1 再被注意（觸發日 T）→ T 收盤後公告處置 → T+1 為處置第 1 天（D1）。</p>
+    <h3>8/10 新制</h3>
+    <div class="tw"><table style="max-width:560px"><thead><tr><th>項目</th><th>舊制</th><th>新制（2026-08-10 起）</th></tr></thead>
+      <tbody><tr><td>處置期間</td><td>10 個營業日</td><td>5 個營業日</td></tr>
+      <tr><td>含當沖過高</td><td>12 個營業日</td><td>7 個營業日</td></tr>
+      <tr><td>撮合頻率</td><td>每 5 分鐘（再次 20 分鐘）</td><td>每 2 分鐘</td></tr></tbody></table></div>
+    <h3>判定準確度（用歷史資料驗證）</h3>
+    <div id="ruleCov"></div>
+    <h3>使用限制</h3>
+    <ul>
+      <li>注意股款別由公告文字辨識，若文字格式特殊可能誤判；第 1 款觸發價用 6 日累積漲幅估算，實際門檻依股價級距與同業差幅而定。</li>
+      <li>停損停利用日 K 的高低點模擬：同一天同時碰到停損與停利時一律算停損；跳空越過停損價時以開盤價成交。</li>
+      <li>做空需有券源，再次處置通常要預收款券，實務上可能借不到或無法當沖。成本預設 0.5%（手續費折扣後、證交稅、借券費），當沖可調低到約 0.3%。</li>
+      <li>「隔日確實觸發」與「觸發日收盤進場」用到收盤後才知道的資訊，只能當參考，不能直接當交易規則。</li>
+    </ul>
+    <p class="mut" id="ruleMeta"></p>
+  </div>
+</section>
+</main>
+<div id="tip" hidden></div>
+
+<script>
+const DATA = /*__DATA__*/null;
+(function(){
+"use strict";
+const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
+const D = DATA.dates, RI = DATA.meta.regimeIdx, ST = DATA.stocks;
+const SIG = DATA.signals.map(a => { const o = {}; DATA.sigCols.forEach((k, i) => o[k] = a[i]); return o; });
+const EV = DATA.events;
+let REG = "all";
+try { const r = localStorage.getItem("dsp_regime"); if (r) REG = r; } catch (e) {}
+
+// ---------- helpers
+const fmtP = (x, d = 2) => x == null || !isFinite(x) ? "–" : (x > 0 ? "+" : "") + x.toFixed(d) + "%";
+const fmt = (x, d = 2) => x == null || !isFinite(x) ? "–" : x.toFixed(d);
+const cls = x => x > 0 ? "up" : x < 0 ? "down" : "mut";
+const sName = j => ST[j] ? ST[j][1] : "";
+const sId = j => ST[j] ? ST[j][0] : j;
+const sMkt = j => ST[j] ? ST[j][2] : "";
+const sFut = j => ST[j] && ST[j][3] ? 1 : 0;
+const yearOf = i => +D[Math.min(i, D.length - 1)].slice(0, 4);
+const inReg = (i, reg = REG) => reg === "all" ? true : reg === "old" ? i < RI : i >= RI;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function dateAt(i) { if (i < D.length) return D[i]; const d = new Date(D[D.length - 1]); let k = i - D.length + 1; while (k > 0) { d.setDate(d.getDate() + 1); if (d.getDay() % 6) k--; } return d.toISOString().slice(0, 10) + "＊"; }
+
+// price lookup
+const PX = DATA.px;
+function bar(j, i) {
+  const segs = PX[j]; if (!segs) return null;
+  for (const g of segs) { const k = i - g[0]; if (k >= 0 && k < g[4].length) { const c = g[4][k]; if (c == null) return null; return { o: g[1][k] ?? c, h: g[2][k] ?? c, l: g[3][k] ?? c, c }; } }
+  return null;
+}
+function stats(arr) {
+  const n = arr.length; if (!n) return { n: 0 };
+  let s = 0, up = 0, dn = 0, w = 0, l = 0, sw = 0, sl = 0;
+  for (const x of arr) { s += x; if (x > 0) { up++; sw += x; } else if (x < 0) { dn++; sl -= x; } }
+  const m = s / n; let v = 0; for (const x of arr) v += (x - m) ** 2;
+  const sd = n > 1 ? Math.sqrt(v / (n - 1)) : 0;
+  const so = arr.slice().sort((a, b) => a - b);
+  const med = n % 2 ? so[(n - 1) / 2] : (so[n / 2 - 1] + so[n / 2]) / 2;
+  return { n, mean: m, med, up: up / n * 100, dn: dn / n * 100, sd, t: sd ? m / (sd / Math.sqrt(n)) : 0, sum: s, pf: sl ? sw / sl : (sw ? Infinity : 0), aw: up ? sw / up : 0, al: dn ? -sl / dn : 0, min: so[0], max: so[n - 1] };
+}
+
+// ---------- tooltip
+const tip = $("#tip");
+function showTip(html, ev) { tip.innerHTML = html; tip.hidden = false; const x = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8); const y = Math.max(8, ev.clientY - tip.offsetHeight - 12); tip.style.left = x + "px"; tip.style.top = y + "px"; }
+function hideTip() { tip.hidden = true; }
+
+// ---------- SVG charts
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function niceTicks(lo, hi, n = 4) {
+  const span = hi - lo || 1, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0)), r = step0 / mag;
+  const step = (r < 1.5 ? 1 : r < 3 ? 2 : r < 7 ? 5 : 10) * mag; const t = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) t.push(+v.toFixed(10)); return t;
+}
+// diverging bar chart around baseline
+function barChart(box, items, o) {
+  box.innerHTML = ""; if (!items.length) { box.innerHTML = '<div class="empty">沒有資料</div>'; return; }
+  const W = Math.max(300, box.clientWidth || 600), H = o.h || 220, ml = 42, mr = 8, mt = 10, mb = 34;
+  const base = o.base ?? 0; const vals = items.map(d => d.v).filter(v => v != null && isFinite(v));
+  let lo = Math.min(base, ...vals), hi = Math.max(base, ...vals); if (o.lo != null) lo = Math.min(lo, o.lo); if (o.hi != null) hi = Math.max(hi, o.hi);
+  const pad = (hi - lo) * 0.08 || 1; lo -= (lo < base ? pad : 0); hi += (hi > base ? pad : 0);
+  const y = v => mt + (H - mt - mb) * (1 - (v - lo) / (hi - lo));
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": o.aria || "" }, box);
+  for (const t of niceTicks(lo, hi)) { el("line", { x1: ml, x2: W - mr, y1: y(t), y2: y(t), class: "gridl" }, svg); const tx = el("text", { x: ml - 6, y: y(t) + 4, "text-anchor": "end" }, svg); tx.textContent = o.tick ? o.tick(t) : t; }
+  el("line", { x1: ml, x2: W - mr, y1: y(base), y2: y(base), class: "base" }, svg);
+  const bw = (W - ml - mr) / items.length, gap = Math.min(4, bw * 0.25);
+  const every = Math.ceil(items.length / Math.floor((W - ml - mr) / 34));
+  items.forEach((d, i) => {
+    const x = ml + i * bw + gap / 2, w = Math.max(1, bw - gap);
+    if (d.sep) el("line", { x1: ml + i * bw, x2: ml + i * bw, y1: mt, y2: H - mb, stroke: "var(--line)", "stroke-dasharray": "3 3" }, svg);
+    if (d.v != null && isFinite(d.v)) {
+      const y0 = y(base), y1 = y(d.v), top = Math.min(y0, y1), h = Math.max(1, Math.abs(y1 - y0));
+      const r = Math.min(4, w / 2, h);
+      const up = d.v >= base;
+      const path = up ? `M${x},${y0} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${y0} Z`
+                      : `M${x},${y0} V${top + h - r} Q${x},${top + h} ${x + r},${top + h} H${x + w - r} Q${x + w},${top + h} ${x + w},${top + h - r} V${y0} Z`;
+      el("path", { d: path, fill: d.v > base ? "var(--up)" : d.v < base ? "var(--down)" : "var(--flat)", opacity: d.dim ? 0.45 : 1 }, svg);
+    }
+    const hit = el("rect", { x: ml + i * bw, y: mt, width: bw, height: H - mt - mb, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => showTip(o.tipFn(d), e)); hit.addEventListener("mouseleave", hideTip);
+    if (i % every === 0) { const t = el("text", { x: x + w / 2, y: H - mb + 14, "text-anchor": "middle", class: d.strong ? "lbl" : "" }, svg); t.textContent = d.label; }
+  });
+}
+function lineChart(box, pts, o) {
+  box.innerHTML = ""; if (pts.length < 2) { box.innerHTML = '<div class="empty">交易數不足</div>'; return; }
+  const W = Math.max(300, box.clientWidth || 600), H = o.h || 220, ml = 48, mr = 10, mt = 10, mb = 26;
+  const ys = pts.map(p => p.y); let lo = Math.min(0, ...ys), hi = Math.max(0, ...ys); const pad = (hi - lo) * .06 || 1; lo -= pad; hi += pad;
+  const x = i => ml + (W - ml - mr) * i / (pts.length - 1), y = v => mt + (H - mt - mb) * (1 - (v - lo) / (hi - lo));
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": o.aria || "" }, box);
+  for (const t of niceTicks(lo, hi)) { el("line", { x1: ml, x2: W - mr, y1: y(t), y2: y(t), class: "gridl" }, svg); el("text", { x: ml - 6, y: y(t) + 4, "text-anchor": "end" }, svg).textContent = t + "%"; }
+  el("line", { x1: ml, x2: W - mr, y1: y(0), y2: y(0), class: "base" }, svg);
+  // year ticks
+  const short = (new Date(pts[pts.length - 1].d) - new Date(pts[0].d)) < 400 * 864e5;
+  let lastY = null, lastX = -1e9; pts.forEach((p, i) => { const yr = short ? p.d.slice(0, 7) : p.d.slice(0, 4); if (yr !== lastY) { lastY = yr; if (x(i) - lastX >= 40) { lastX = x(i); el("text", { x: x(i), y: H - 8, "text-anchor": "start" }, svg).textContent = short ? (+p.d.slice(5, 7)) + "月" : yr; } } });
+  let dA = `M${x(0)},${y(0)}`; let dL = ""; pts.forEach((p, i) => { dA += ` L${x(i)},${y(p.y)}`; dL += (i ? " L" : "M") + `${x(i)},${y(p.y)}`; });
+  dA += ` L${x(pts.length - 1)},${y(0)} Z`;
+  const last = pts[pts.length - 1].y, col = last >= 0 ? "var(--up)" : "var(--down)";
+  el("path", { d: dA, fill: col, opacity: .1 }, svg);
+  el("path", { d: dL, fill: "none", stroke: col, "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  el("circle", { cx: x(pts.length - 1), cy: y(last), r: 4, fill: col, stroke: "var(--panel)", "stroke-width": 2 }, svg);
+  const cross = el("line", { y1: mt, y2: H - mb, stroke: "var(--faint)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const dot = el("circle", { r: 4, fill: col, stroke: "var(--panel)", "stroke-width": 2, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: ml, y: mt, width: W - ml - mr, height: H - mt - mb, fill: "transparent" }, svg);
+  hit.addEventListener("mousemove", e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width;
+    const i = Math.max(0, Math.min(pts.length - 1, Math.round((px - ml) / (W - ml - mr) * (pts.length - 1))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(pts[i].y)); dot.setAttribute("visibility", "visible");
+    showTip(o.tipFn(pts[i], i), e);
+  });
+  hit.addEventListener("mouseleave", () => { hideTip(); cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); });
+}
+function histChart(box, arr) {
+  if (!arr.length) { box.innerHTML = '<div class="empty">交易數不足</div>'; return; }
+  const so = arr.slice().sort((a, b) => a - b); const lo = Math.max(so[0], so[Math.floor(so.length * .01)]), hi = Math.min(so[so.length - 1], so[Math.floor(so.length * .99)]);
+  const nb = 24, step = (hi - lo) / nb || 1; const bins = Array.from({ length: nb }, (_, i) => ({ a: lo + i * step, b: lo + (i + 1) * step, n: 0 }));
+  for (const x of arr) { let k = Math.floor((x - lo) / step); k = Math.max(0, Math.min(nb - 1, k)); bins[k].n++; }
+  const items = bins.map(b => { const mid = (b.a + b.b) / 2; return { label: mid.toFixed(1), v: b.n, mid, b }; });
+  // use bar chart with base 0; color by sign of bin midpoint
+  box.innerHTML = ""; const W = Math.max(300, box.clientWidth || 600), H = 220, ml = 36, mr = 8, mt = 10, mb = 30;
+  const mx = Math.max(...items.map(d => d.v)); const y = v => mt + (H - mt - mb) * (1 - v / mx);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, box); const bw = (W - ml - mr) / nb;
+  for (const t of niceTicks(0, mx)) { el("line", { x1: ml, x2: W - mr, y1: y(t), y2: y(t), class: "gridl" }, svg); el("text", { x: ml - 6, y: y(t) + 4, "text-anchor": "end" }, svg).textContent = t; }
+  items.forEach((d, i) => {
+    const x = ml + i * bw + 1, w = bw - 2, top = y(d.v);
+    el("rect", { x, y: top, width: Math.max(1, w), height: H - mb - top, rx: 2, fill: d.b.b <= 0 ? "var(--down)" : d.b.a >= 0 ? "var(--up)" : "var(--flat)" }, svg);
+    const hit = el("rect", { x: ml + i * bw, y: mt, width: bw, height: H - mt - mb, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => showTip(`<span class="num">${fmtP(d.b.a)} ~ ${fmtP(d.b.b)}</span><br>${d.v} 筆`, e)); hit.addEventListener("mouseleave", hideTip);
+    if (i % 4 === 0) el("text", { x: x + w / 2, y: H - mb + 14, "text-anchor": "middle" }, svg).textContent = d.b.a.toFixed(0) + "%";
+  });
+  const zx = ml + (0 - lo) / step * bw; if (zx > ml && zx < W - mr) el("line", { x1: zx, x2: zx, y1: mt, y2: H - mb, class: "base", "stroke-dasharray": "3 3" }, svg);
+}
+
+// ---------- regime toggle & tabs
+function setRegime(v) { REG = v; try { localStorage.setItem("dsp_regime", v); } catch (e) {} $$("#regime button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === v)); renderAll(); }
+$$("#regime button").forEach(b => b.onclick = () => setRegime(b.dataset.v));
+let TAB = "fc";
+function setTab(t) { TAB = t; $$("#tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.t === t)); $$("section.page").forEach(s => s.hidden = s.id !== "p-" + t); try { localStorage.setItem("dsp_tab", t); } catch (e) {} if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t); renderTab(); }
+$$("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.t));
+
+// ---------- year selects
+const y0 = +D[0].slice(0, 4) + 0, yN = +D[D.length - 1].slice(0, 4);
+for (const id of ["#dYear", "#bYear"]) { const s = $(id); for (let y = y0; y <= yN; y++) s.add(new Option(y + (y === y0 ? "（全部）" : ""), y)); }
+$("#bYear").value = String(Math.max(y0, 2018));
+
+// ============================================================ 逐日統計
+const MAXN = 12, PRE = 5, POST = 5;
+function eventFilter(e, f) {
+  if (!inReg(e.st)) return false;
+  if (f.ord && e.o !== f.ord) return false;
+  if (f.mkt && sMkt(e.s) !== f.mkt) return false;
+  if (f.len && e.n !== f.len) return false;
+  if (f.year && yearOf(e.st) < f.year) return false;
+  if (e.st >= D.length) return false;
+  return true;
+}
+function dayRet(j, i, metric, T) {
+  const b = bar(j, i), p = bar(j, i - 1); if (!b) return null;
+  if (metric === "cc") return p ? (b.c / p.c - 1) * 100 : null;
+  if (metric === "oc") return (b.c / b.o - 1) * 100;
+  if (metric === "gap") return p ? (b.o / p.c - 1) * 100 : null;
+  if (metric === "cum") { const t = bar(j, T); return t ? (b.c / t.c - 1) * 100 : null; }
+}
+function dayStats(f, metric, align) {
+  const rows = []; // {label, key, vals[]}
+  const mk = (label, sep, strong) => { const r = { label, vals: [], lim: 0, sep, strong }; rows.push(r); return r; };
+  const pre = []; for (let k = PRE - 1; k >= 0; k--) pre.push(mk(k ? "T-" + k : "T", false, k === 0));
+  const mid = []; for (let k = 1; k <= MAXN; k++) mid.push(mk(align === "fwd" ? "D" + k : (k === 1 ? "最後" : "倒" + k), k === 1 && align === "fwd"));
+  if (align === "back") mid.reverse(), mid[0].sep = true;
+  const post = []; for (let k = 1; k <= POST; k++) post.push(mk("出+" + k, k === 1));
+  if (align === "back") { rows.length = 0; rows.push(...pre, ...mid, ...post); }
+  let used = 0;
+  for (const e of EV) {
+    if (!eventFilter(e, f)) continue; used++;
+    const T = e.st - 1;
+    for (let k = 0; k < PRE; k++) { const v = dayRet(e.s, T - (PRE - 1 - k), metric, T); if (v != null) pre[k].vals.push(v); }
+    const lastIdx = Math.min(e.en, D.length - 1);
+    for (let k = 1; k <= Math.min(e.n, MAXN); k++) {
+      const i = e.st + k - 1; if (i > lastIdx) break;
+      const v = dayRet(e.s, i, metric, T); if (v == null) continue;
+      if (align === "fwd") mid[k - 1].vals.push(v); else { const back = e.n - k + 1; if (back <= MAXN) mid[MAXN - back].vals.push(v); }
+    }
+    if (e.en < D.length - 1) for (let k = 1; k <= POST; k++) { const v = dayRet(e.s, e.en + k, metric, T); if (v != null) post[k - 1].vals.push(v); }
+  }
+  return { rows: rows.map(r => Object.assign(r, stats(r.vals), { lu: r.vals.filter(v => v >= 9.4).length / (r.vals.length || 1) * 100, ld: r.vals.filter(v => v <= -9.4).length / (r.vals.length || 1) * 100 })), used };
+}
+function readDayFilter() { return { ord: +$("#dOrd").value, mkt: $("#dMkt").value, len: +$("#dLen").value, year: +$("#dYear").value }; }
+function renderDay() {
+  const metric = $("#dMetric").value, align = $("#dAlign").value, f = readDayFilter();
+  const { rows, used } = dayStats(f, metric, align);
+  const vis = rows.filter(r => r.n >= 3);
+  const d1 = rows.find(r => r.label === "D1"), last = rows.find(r => r.label === "最後"), t = rows.find(r => r.label === "T");
+  const o = dayStats(f, "oc", "fwd").rows.find(r => r.label === "D1");
+  $("#dKpi").innerHTML = [
+    ["處置事件數", used], ["觸發日 T 上漲率", t && t.n ? fmt(t.up, 1) + "%" : "–"],
+    [align === "fwd" ? "D1 上漲率" : "最後一天上漲率", (align === "fwd" ? d1 : last)?.n ? fmt((align === "fwd" ? d1 : last).up, 1) + "%" : "–"],
+    ["D1 當沖空平均（未扣成本）", o && o.n ? `<span class="${cls(-o.mean)}">${fmtP(-o.mean)}</span>` : "–"],
+    ["制度", { all: "全部", old: "舊制", new: "新制" }[REG]]
+  ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("");
+  const tipFn = d => `<b>${d.label}</b>　<span class="num">n=${d.r.n}</span><br>上漲 <span class="num">${fmt(d.r.up, 1)}%</span>　下跌 <span class="num">${fmt(d.r.dn, 1)}%</span><br>平均 <span class="num">${fmtP(d.r.mean)}</span>　中位 <span class="num">${fmtP(d.r.med)}</span>`;
+  barChart($("#dChartP"), vis.map(r => ({ label: r.label, v: r.up, r, sep: r.sep, strong: r.strong, dim: r.n < 20 })), { base: 50, lo: 30, hi: 70, tick: t => t + "%", tipFn, aria: "各天上漲機率" });
+  barChart($("#dChartM"), vis.map(r => ({ label: r.label, v: r.mean, r, sep: r.sep, strong: r.strong, dim: r.n < 20 })), { base: 0, tick: t => t + "%", tipFn, aria: "各天平均報酬" });
+  $("#dChartMsub").textContent = { cc: "昨收→今收 %", oc: "開→收 %", gap: "昨收→今開 %", cum: "觸發日收盤起算 %" }[metric] + "　淡色=樣本少於 20";
+  $("#dTable").innerHTML = `<thead><tr><th>日</th><th class="n">樣本</th><th class="n">上漲%</th><th class="n">下跌%</th><th class="n">平均</th><th class="n">中位數</th><th class="n">標準差</th><th class="n">漲停%</th><th class="n">跌停%</th><th class="n">當沖空期望</th></tr></thead><tbody>` +
+    rows.map(r => r.n ? `<tr><td>${r.label}</td><td class="n">${r.n}</td><td class="n">${fmt(r.up, 1)}</td><td class="n">${fmt(r.dn, 1)}</td><td class="n ${cls(r.mean)}">${fmtP(r.mean)}</td><td class="n ${cls(r.med)}">${fmtP(r.med)}</td><td class="n">${fmt(r.sd)}</td><td class="n">${metric === "cc" ? fmt(r.lu, 1) : "–"}</td><td class="n">${metric === "cc" ? fmt(r.ld, 1) : "–"}</td><td class="n ${metric === "oc" ? cls(-r.mean) : "mut"}">${metric === "oc" ? fmtP(-r.mean) : "–"}</td></tr>` : "").join("") + "</tbody>";
+}
+["#dMetric", "#dAlign", "#dOrd", "#dMkt", "#dLen", "#dYear"].forEach(s => $(s).onchange = renderDay);
+
+// ============================================================ 回測引擎（T / D1 / D2 …）
+const DAYCODES = ["T-5", "T-4", "T-3", "T-2", "T-1", "T"].concat(Array.from({ length: 12 }, (_, i) => "D" + (i + 1)), ["DL", "X1", "X2", "X3"]);
+const DAYNAME = { "T-1": "T-1 聽牌日", "T": "T 觸發日", "D1": "D1 處置第1天", "DL": "DL 處置最後一天", "X1": "X1 出關第1天", "X2": "X2 出關第2天", "X3": "X3 出關第3天" };
+const dayLabel = c => DAYNAME[c] || c;
+for (const id of ["#bInD", "#bOutD"]) { const s = $(id); for (const c of DAYCODES) s.add(new Option(dayLabel(c), c)); }
+function dayOff(code, n) {
+  if (code === "T") return 0;
+  if (code[0] === "T") return -(+code.slice(2));
+  if (code === "DL") return n == null ? null : n;
+  if (code[0] === "X") return n == null ? null : n + (+code.slice(1));
+  return +code.slice(1);
+}
+const codeKey = (d, p) => d + p;
+const parseCode = s => { const m = String(s).trim().match(/^(T(?:-\d+)?|D\d+|DL|X\d)([oc])$/i); return m ? { d: m[1].toUpperCase(), p: m[2].toLowerCase() } : null; };
+const codeName = c => c.d + (c.p === "o" ? " 開" : " 收");
+
+function readBt() {
+  return {
+    src: $("#bSrc").value, dir: +$("#bDir").value,
+    en: { d: $("#bInD").value, p: $("#bInP").value }, ex: { d: $("#bOutD").value, p: $("#bOutP").value },
+    sl: +$("#bSL").value || 0, tp: +$("#bTP").value || 0, cost: +$("#bCost").value || 0,
+    ord: +$("#bEvtOrd").value, mkt: $("#bMkt").value, fut: $("#bFut").value, px: +$("#bPx").value || 0, vol: +$("#bVol").value || 0, year: +$("#bYear").value
+  };
+}
+// 候選樣本：{j, T(觸發日序號), n(處置天數), rg}
+function candidates(c) {
+  const out = [];
+  if (c.src === "evt") {
+    for (const e of EV) {
+      const T = e.st - 1; if (T >= D.length) continue;
+      if (!c.noGroup && c.ord && e.o !== c.ord) continue;
+      if (c.year && yearOf(e.st) < c.year) continue;
+      if (c.vol && (e.v == null || e.v < c.vol)) continue;
+      if (!c.noGroup && c.mkt && sMkt(e.s) !== c.mkt) continue;
+      if (!c.noGroup && c.fut !== "" && c.fut != null && sFut(e.s) !== +c.fut) continue;
+      out.push({ j: e.s, T, n: e.n, rg: e.st >= RI ? 1 : 0, ord: e.o });
+    }
+  } else {
+    for (const s of SIG) {
+      if (!s.first || s.ind) continue;
+      const T = s.t + 1; if (T >= D.length) continue;
+      if (c.year && yearOf(s.t) < c.year) continue;
+      if (c.vol && (s.v == null || s.v < c.vol)) continue;
+      if (!c.noGroup && c.mkt && sMkt(s.s) !== c.mkt) continue;
+      if (!c.noGroup && c.fut !== "" && c.fut != null && sFut(s.s) !== +c.fut) continue;
+      out.push({ j: s.s, T, n: null, rg: s.t >= RI ? 1 : 0, hit: s.nxt === 2, ord: 0 });
+    }
+  }
+  const res = [];
+  for (const k of out) {
+    const bT = bar(k.j, k.T); if (!bT || (c.px && bT.c < c.px)) continue;
+    const hi = (k.n || 12) + 3; k.w = [];
+    for (let o = -5; o <= hi; o++) k.w.push(bar(k.j, k.T + o));
+    res.push(k);
+  }
+  return res;
+}
+// 單筆模擬：停損停利用每日高低價判斷，同一天兩邊都碰到算停損；跳空越過時用開盤價
+function sim(k, en, ex, dir, sl, tp, cost) {
+  const oi = dayOff(en.d, k.n), ox = dayOff(ex.d, k.n);
+  if (oi == null || ox == null) return null;
+  if (ox * 2 + (ex.p === "c") <= oi * 2 + (en.p === "c")) return null;
+  const B = o => k.w[o + 5];
+  if (oi + 5 < 0 || ox + 5 >= k.w.length) return null;
+  const b0 = B(oi), bx = B(ox); if (!b0 || !bx) return null;
+  const E = en.p === "o" ? b0.o : b0.c; if (!(E > 0)) return null;
+  const slP = sl ? (dir < 0 ? E * (1 + sl / 100) : E * (1 - sl / 100)) : null;
+  const tpP = tp ? (dir < 0 ? E * (1 - tp / 100) : E * (1 + tp / 100)) : null;
+  const hitSL = p => dir < 0 ? p >= slP : p <= slP, hitTP = p => dir < 0 ? p <= tpP : p >= tpP;
+  const adv = b => dir < 0 ? b.h : b.l, fav = b => dir < 0 ? b.l : b.h;
+  let X = null, why = "到期", xo = ox;
+  for (let o = oi; o <= ox; o++) {
+    const b = B(o); if (!b) continue;
+    const first = o === oi, last = o === ox;
+    if (first && en.p === "c") continue;
+    if (!first) {
+      if (slP && hitSL(b.o)) { X = b.o; why = "停損"; xo = o; break; }
+      if (tpP && hitTP(b.o)) { X = b.o; why = "停利"; xo = o; break; }
+      if (last && ex.p === "o") { X = b.o; break; }
+    }
+    if (slP && hitSL(adv(b))) { X = slP; why = "停損"; xo = o; break; }
+    if (tpP && hitTP(fav(b))) { X = tpP; why = "停利"; xo = o; break; }
+    if (last) X = b.c;
+  }
+  if (X == null) return null;
+  return { r: dir * (X / E - 1) * 100 - cost, x: k.T + xo, why, E, X };
+}
+
+// ---------- 回測 UI
+const PRESETS = {
+  d1dt: { bSrc: "evt", bInD: "D1", bInP: "o", bOutD: "D1", bOutP: "c", bDir: "-1", bSL: 0, bTP: 0, bCost: 0.3 },
+  tc_d1c: { bSrc: "evt", bInD: "T", bInP: "c", bOutD: "D1", bOutP: "c", bDir: "-1", bSL: 0, bTP: 0, bCost: 0.4 },
+  tc_d2c: { bSrc: "evt", bInD: "T", bInP: "c", bOutD: "D2", bOutP: "c", bDir: "-1", bSL: 0, bTP: 0, bCost: 0.4 },
+  t1c_tc: { bSrc: "sig", bInD: "T-1", bInP: "c", bOutD: "T", bOutP: "c", bDir: "-1", bSL: 0, bTP: 0, bCost: 0.4 },
+  sigdt: { bSrc: "sig", bInD: "T", bInP: "o", bOutD: "T", bOutP: "c", bDir: "-1", bSL: 0, bTP: 0, bCost: 0.3 },
+};
+function applyCfg(p) { for (const k in p) { const e = $("#" + k); if (e) e.value = p[k]; } syncSrc(); renderBt(); }
+$$("[data-preset]").forEach(b => b.onclick = () => applyCfg(PRESETS[b.dataset.preset]));
+function syncSrc() {
+  const sig = $("#bSrc").value === "sig";
+  for (const id of ["#bInD", "#bOutD"]) for (const o of $(id).options) o.disabled = sig && (o.value === "DL" || o.value[0] === "X");
+  for (const id of ["#bInD", "#bOutD"]) if ($(id).selectedOptions[0]?.disabled) $(id).value = "D1";
+  $("#bEvtOrd").disabled = sig;
+}
+$$("#p-bt .panel select, #p-bt .panel input").forEach(e => e.onchange = () => { syncSrc(); renderBt(); });
+
+function renderTL(c) {
+  const codes = ["T-2", "T-1", "T", "D1", "D2", "D3", "D4", "D5", "…", "DL", "X1", "X2"];
+  const pos = code => { const o = dayOff(code, 100); return o == null ? null : o; };
+  const a = pos(c.en.d) * 2 + (c.en.p === "c"), b = pos(c.ex.d) * 2 + (c.ex.p === "c");
+  $("#btTL").innerHTML = codes.map(code => {
+    if (code === "…") return `<span class="tl-gap">…</span>`;
+    if (c.src === "sig" && (code === "DL" || code[0] === "X")) return "";
+    const o = pos(code) * 2; let cl = "", tag = "";
+    if (code === c.en.d) { cl = "in"; tag = `<em>進・${c.en.p === "o" ? "開" : "收"}</em>`; }
+    if (code === c.ex.d) { cl = code === c.en.d ? "in out" : "out"; tag += `<em>出・${c.ex.p === "o" ? "開" : "收"}</em>`; }
+    if (!cl && o > a && o + 1 < b) cl = "hold";
+    return `<span class="tl-d ${cl}"><b>${code}</b>${tag}</span>`;
+  }).join("");
+}
+function btNote(c) {
+  const msgs = [];
+  const valid = dayOff(c.ex.d, 5) * 2 + (c.ex.p === "c") > dayOff(c.en.d, 5) * 2 + (c.en.p === "c");
+  if (!valid) return "出場必須在進場之後。";
+  msgs.push(`${c.dir < 0 ? "做空" : "做多"}：${dayLabel(c.en.d)}${c.en.p === "o" ? "開盤" : "收盤"}進場 → ${dayLabel(c.ex.d)}${c.ex.p === "o" ? "開盤" : "收盤"}出場${c.sl ? `，停損 ${c.sl}%` : ""}${c.tp ? `，停利 ${c.tp}%` : ""}。期間每天先看開盤有沒有跳空越過，再用最高、最低價檢查；同一天停損停利都碰到算停損。`);
+  const oi = dayOff(c.en.d, 5);
+  if (c.src === "evt" && oi <= 0) msgs.push("「實際進處置」樣本在 T 收盤前進場，等於事先知道它會進處置，只能當參考；實盤請改用「所有聽牌」樣本比較。");
+  if (c.src === "evt" && c.en.d === "T" && c.en.p === "c") msgs.push("T 收盤進場需盤中自行判斷今天會觸發（處置收盤後才公告）。");
+  if (c.src === "sig") msgs.push("「所有聽牌」樣本的 T、D1 只是聽牌後第幾個交易日，不代表真的進了處置。");
+  if (c.dir < 0) msgs.push("做空需有券源；再次處置須預收款券。");
+  return msgs.join(" ");
+}
+function renderBt() {
+  const c = readBt(); $("#btNote").textContent = btNote(c); renderTL(c);
+  const resAll = []; for (const k of candidates(c)) { const r = sim(k, c.en, c.ex, c.dir, c.sl, c.tp, c.cost); if (r) resAll.push(Object.assign(r, { c: k })); }
+  resAll.sort((a, b) => a.x - b.x);
+  const res = resAll.filter(r => REG === "all" || (REG === "new") === !!r.c.rg);
+  const eqSum = [0, 0]; for (const r of resAll) eqSum[r.c.rg ? 1 : 0] += r.r;
+  const eqTip = p => `<span class="num">${p.d}</span>　累積 <span class="num">${fmtP(p.y, 1)}</span><br>${esc(sId(p.r.c.j))} ${esc(sName(p.r.c.j))}　本筆 <span class="num">${fmtP(p.r.r)}</span>`;
+  for (const [rg, box, kb] of [[0, "#bEqOld", "#bEqOldK"], [1, "#bEqNew", "#bEqNewK"]]) {
+    const rr = resAll.filter(r => !!r.c.rg === !!rg); const st = stats(rr.map(r => r.r));
+    let cu = 0, pk = 0, dd = 0; const pp = rr.map(r => { cu += r.r; pk = Math.max(pk, cu); dd = Math.min(dd, cu - pk); return { y: +cu.toFixed(2), d: D[Math.min(r.x, D.length - 1)], r }; });
+    $(kb).innerHTML = st.n ? `<span>${st.n} 筆</span><span>勝率 <b>${fmt(st.up, 1)}%</b></span><span>平均 <b class="${cls(st.mean)}">${fmtP(st.mean)}</b></span><span>t 值 <b>${fmt(st.t)}</b></span><span>累積 <b class="${cls(cu)}">${fmtP(cu, 0)}</b></span><span>最大回落 <b>${fmt(dd, 0)}%</b></span>` : "<span>沒有交易</span>";
+    lineChart($(box), pp, { tipFn: eqTip, aria: rg ? "新制累積報酬" : "舊制累積報酬" });
+  }
+  const s = stats(res.map(r => r.r));
+  let cum = 0, peak = 0, mdd = 0; const pts = res.map(r => { cum += r.r; peak = Math.max(peak, cum); mdd = Math.min(mdd, cum - peak); return { y: +cum.toFixed(2), d: D[Math.min(r.x, D.length - 1)], r }; });
+  const k = (lbl, v) => `<div class="kpi"><span>${lbl}</span><b>${v}</b></div>`;
+  $("#bKpi").innerHTML = s.n ? [
+    k("交易數", s.n), k("勝率", fmt(s.up, 1) + "%"), k("平均報酬（扣成本）", `<span class="${cls(s.mean)}">${fmtP(s.mean)}</span>`), k("中位數", `<span class="${cls(s.med)}">${fmtP(s.med)}</span>`),
+    k("獲利因子", fmt(s.pf)), k("均賺 / 均賠", `${fmt(s.aw, 1)} / ${fmt(s.al, 1)}`), k("t 值", `<span class="${Math.abs(s.t) >= 2 ? cls(s.t) : "mut"}">${fmt(s.t)}</span>`), (REG === "all" ? k("累積 舊制 / 新制", `<span class="${cls(eqSum[0])}">${fmt(eqSum[0], 0)}%</span> / <span class="${cls(eqSum[1])}">${fmt(eqSum[1], 0)}%</span>`) : k("累積 / 最大回落", `${fmt(cum, 0)}% / ${fmt(mdd, 0)}%`))
+  ].join("") : k("交易數", 0);
+  histChart($("#bHist"), res.map(r => r.r));
+  renderGroups(c);
+  const byY = {}; for (const r of res) { const y = D[Math.min(r.c.T + 1, D.length - 1)].slice(0, 4); (byY[y] = byY[y] || []).push(r.r); }
+  $("#bYearT").innerHTML = `<thead><tr><th>年</th><th class="n">筆數</th><th class="n">勝率</th><th class="n">平均</th><th class="n">累積</th></tr></thead><tbody>` + Object.keys(byY).sort().map(y => { const t = stats(byY[y]); return `<tr><td>${y}</td><td class="n">${t.n}</td><td class="n">${fmt(t.up, 1)}%</td><td class="n ${cls(t.mean)}">${fmtP(t.mean)}</td><td class="n ${cls(t.sum)}">${fmtP(t.sum, 1)}</td></tr>`; }).join("") + "</tbody>";
+  const byX = {}; for (const r of res) (byX[r.why] = byX[r.why] || []).push(r.r);
+  $("#bExitT").innerHTML = `<thead><tr><th>原因</th><th class="n">筆數</th><th class="n">占比</th><th class="n">平均</th></tr></thead><tbody>` + Object.keys(byX).map(w => { const t = stats(byX[w]); return `<tr><td>${w}</td><td class="n">${t.n}</td><td class="n">${fmt(t.n / s.n * 100, 1)}%</td><td class="n ${cls(t.mean)}">${fmtP(t.mean)}</td></tr>`; }).join("") + "</tbody>";
+  $("#bTrades").innerHTML = `<thead><tr><th>T 日</th><th>代號</th><th>名稱</th><th class="n">進場價</th><th>出場日</th><th class="n">出場價</th><th>原因</th><th class="n">報酬</th></tr></thead><tbody>` +
+    res.slice(-150).reverse().map(r => `<tr><td class="num">${dateAt(r.c.T)}</td><td class="num">${esc(sId(r.c.j))}</td><td>${esc(sName(r.c.j))}</td><td class="n">${fmt(r.E)}</td><td class="num">${dateAt(r.x)}</td><td class="n">${fmt(r.X)}</td><td>${r.why}</td><td class="n ${cls(r.r)}">${fmtP(r.r)}</td></tr>`).join("") + "</tbody>";
+}
+
+function renderGroups(c) {
+  const all = candidates(Object.assign({}, c, { noGroup: true }));
+  const rows = []; // [label, filterFn]
+  const isEvt = c.src === "evt";
+  const dims = [];
+  if (isEvt) dims.push(["處置次數", [["第一次處置", k => k.ord === 1], ["再次處置", k => k.ord === 2]]]);
+  dims.push(["市場", [["上市", k => sMkt(k.j) === "上市"], ["上櫃", k => sMkt(k.j) === "上櫃"]]]);
+  if (DATA.meta.hasFut) dims.push(["股票期貨", [["有股期", k => sFut(k.j) === 1], ["無股期", k => sFut(k.j) === 0]]]);
+  rows.push(["全部", () => true, true]);
+  for (const [, opts] of dims) for (const [lb, fn] of opts) rows.push([lb, fn, false]);
+  // 交叉
+  const cross = [[]]; for (const [, opts] of dims) { const nx = []; for (const pre of cross) for (const o of opts) nx.push(pre.concat([o])); cross.length = 0; cross.push(...nx); }
+  for (const combo of cross) rows.push([combo.map(o => o[0]).join("・"), k => combo.every(o => o[1](k)), false, true]);
+  const R = rows.map(([lb, fn, bold, sub]) => {
+    const g = { all: [], old: [], new: [] };
+    for (const k of all) { if (!fn(k)) continue; const r = sim(k, c.en, c.ex, c.dir, c.sl, c.tp, c.cost); if (!r) continue; if (REG === "all" || (REG === "new") === !!k.rg) g.all.push(r.r); (k.rg ? g.new : g.old).push(r.r); }
+    return { lb, bold, sub, s: stats(g.all), o: stats(g.old), n: stats(g.new) };
+  });
+  const cell = s => s.n ? `<td class="n ${cls(s.mean)}">${fmtP(s.mean)}</td><td class="n mut">${s.n}</td>` : `<td class="n mut">–</td><td class="n mut">0</td>`;
+  $("#bGrp").innerHTML = `<thead><tr><th>分類</th><th class="n">筆數</th><th class="n">勝率</th><th class="n">平均</th><th class="n">中位數</th><th class="n">PF</th><th class="n">t 值</th><th class="n">舊制平均</th><th class="n">n</th><th class="n">新制平均</th><th class="n">n</th></tr></thead><tbody>` +
+    R.map(r => { const s = r.s; return `<tr${r.sub ? ' class="subrow"' : ""}><td>${r.bold ? "<b>" + r.lb + "</b>" : r.lb}</td>${s.n ? `<td class="n">${s.n}</td><td class="n">${fmt(s.up, 1)}%</td><td class="n ${cls(s.mean)}">${fmtP(s.mean)}</td><td class="n ${cls(s.med)}">${fmtP(s.med)}</td><td class="n">${fmt(s.pf)}</td><td class="n ${Math.abs(s.t) >= 2 ? cls(s.t) : "mut"}">${fmt(s.t)}</td>` : `<td class="n mut">0</td><td colspan="5" class="mut">–</td>`}${cell(r.o)}${cell(r.n)}</tr>`; }).join("") + "</tbody>";
+  $("#bGrpSub").textContent = `同一組進出場設定，依${dims.map(d => d[0]).join("、")}拆開看（不受上方分類篩選影響）；筆數、勝率等依上方分水嶺所選制度`;
+}
+
+// ============================================================ 最佳化
+const parseList = s => s.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean);
+let optRes = null;
+$("#oRun").onclick = () => {
+  const c = readBt();
+  const ens = parseList($("#oEntry").value).map(parseCode), exs = parseList($("#oExit").value).map(parseCode);
+  if (ens.some(x => !x) || exs.some(x => !x)) { $("#oSub").textContent = "進出場代碼格式不對，例如 Tc、D1o、DLc"; return; }
+  const SLs = parseList($("#oSL").value).map(Number), TPs = parseList($("#oTP").value).map(Number);
+  const cands = candidates(c), jobs = [];
+  const dv = $("#oDir").value, dirs = dv === "both" ? [-1, 1] : [+dv];
+  for (const dir of dirs) for (const en of ens) for (const ex of exs) for (const sl of SLs) for (const tp of TPs) jobs.push({ dir, en, ex, sl, tp });
+  const out = []; let i = 0; $("#oRun").disabled = true;
+  (function step() {
+    const t0 = performance.now();
+    while (i < jobs.length && performance.now() - t0 < 40) {
+      const jb = jobs[i++]; const R = { all: [], old: [], new: [] };
+      for (const k of cands) { const r = sim(k, jb.en, jb.ex, jb.dir, jb.sl, jb.tp, c.cost); if (!r) continue; R.all.push(r.r); (k.rg ? R.new : R.old).push(r.r); }
+      if (R.all.length) out.push(Object.assign(jb, { all: stats(R.all), old: stats(R.old), new: stats(R.new) }));
+    }
+    $("#oProg").style.width = (i / jobs.length * 100).toFixed(1) + "%";
+    if (i < jobs.length) setTimeout(step, 0); else { $("#oRun").disabled = false; optRes = { out, c }; renderOpt(); }
+  })();
+};
+function renderOpt() {
+  if (!optRes) { $("#oTable").innerHTML = '<tbody><tr><td class="empty">設定好後按「開始搜尋」</td></tr></tbody>'; $("#oHm").innerHTML = ""; return; }
+  const { out, c } = optRes, m = $("#oMetric").value, key = REG, minN = +$("#oMin").value || 1;
+  const val = r => {
+    if (m === "sumOld" || m === "sumNew") { const s = m === "sumOld" ? r.old : r.new; return s.n && s.n >= minN ? s.sum : -Infinity; }
+    const s = r[key]; if (!s.n || s.n < minN) return -Infinity; return m === "avg" ? s.mean : m === "t" ? s.t : m === "pf" ? (isFinite(s.pf) ? s.pf : 99) : s.up; };
+  const ranked = out.filter(r => isFinite(val(r))).sort((a, b) => val(b) - val(a));
+  $("#oSub").textContent = (c.src === "evt" ? "標「事後」的組合在 T 收盤前進場，用到收盤後才公告的處置資訊，不能直接實戰。" : "") + `共 ${out.length} 組，${ranked.length} 組達最少交易數；依「${{ all: "全部", old: "舊制", new: "新制" }[REG]}」排序。點一列可帶回策略回測`;
+  const cell = s => s.n ? `<td class="n ${cls(s.mean)} sep">${fmtP(s.mean)}</td><td class="n ${cls(s.sum)}">${fmt(s.sum, 0)}%</td><td class="n mut">${s.n}</td>` : `<td class="n mut sep">–</td><td class="n mut">–</td><td class="n mut">0</td>`;
+  $("#oTable").innerHTML = `<thead><tr><th colspan="6"></th><th colspan="5" class="grp">${{ all: "全部", old: "舊制", new: "新制" }[REG]}</th><th colspan="3" class="grp sep">舊制（8/10 前）</th><th colspan="3" class="grp sep">新制（8/10 起）</th></tr><tr><th>#</th><th>方向</th><th>進場</th><th>出場</th><th class="n">停損</th><th class="n">停利</th><th class="n">筆數</th><th class="n">勝率</th><th class="n">平均</th><th class="n">PF</th><th class="n">t 值</th><th class="n sep">平均</th><th class="n">累積</th><th class="n">n</th><th class="n sep">平均</th><th class="n">累積</th><th class="n">n</th></tr></thead><tbody>` +
+    ranked.slice(0, 40).map((r, i) => { const s = r[key]; return `<tr class="click" data-i="${out.indexOf(r)}"><td class="n mut">${i + 1}</td><td><span class="chip ${r.dir < 0 ? "l2" : "l1"}">${r.dir < 0 ? "空" : "多"}</span></td><td>${codeName(r.en)}${c.src === "evt" && dayOff(r.en.d, 5) * 2 + (r.en.p === "c") <= 1 ? ' <span class="chip l3" title="T 收盤前進場等於事先知道會進處置">事後</span>' : ""}</td><td>${codeName(r.ex)}</td><td class="n">${r.sl || "–"}</td><td class="n">${r.tp || "–"}</td><td class="n">${s.n}</td><td class="n">${fmt(s.up, 1)}%</td><td class="n ${cls(s.mean)}">${fmtP(s.mean)}</td><td class="n">${fmt(s.pf)}</td><td class="n">${fmt(s.t)}</td>${cell(r.old)}${cell(r.new)}</tr>`; }).join("") + "</tbody>";
+  $$("#oTable tr.click").forEach(tr => tr.onclick = () => { const r = out[+tr.dataset.i]; applyCfg({ bDir: String(r.dir), bInD: r.en.d, bInP: r.en.p, bOutD: r.ex.d, bOutP: r.ex.p, bSL: r.sl, bTP: r.tp }); setTab("bt"); });
+  const best = ranked[0]; if (!best) { $("#oHm").innerHTML = ""; return; }
+  const EXs = [...new Map(out.map(r => [codeKey(r.ex.d, r.ex.p), r.ex])).values()], SLs = [...new Set(out.map(r => r.sl))];
+  const grid = {}; for (const r of out) if (r.dir === best.dir && codeKey(r.en.d, r.en.p) === codeKey(best.en.d, best.en.p) && r.tp === best.tp) grid[codeKey(r.ex.d, r.ex.p) + "|" + r.sl] = r[key];
+  const vals = Object.values(grid).filter(s => s.n >= minN).map(s => Math.abs(s.mean)); const mx = Math.max(0.01, ...vals);
+  $("#oHmSub").textContent = `固定${best.dir < 0 ? "做空" : "做多"}、進場「${codeName(best.en)}」、停利 ${best.tp || "不設"}；格內為平均報酬`;
+  $("#oHm").innerHTML = `<thead><tr><th>出場＼停損</th>${SLs.map(s => `<th>${s || "不設"}</th>`).join("")}</tr></thead><tbody>` + EXs.map(ex => `<tr><th>${codeName(ex)}</th>${SLs.map(sl => { const s = grid[codeKey(ex.d, ex.p) + "|" + sl]; if (!s || s.n < minN) return `<td class="mut">–</td>`; const a = Math.min(1, Math.abs(s.mean) / mx); const col = s.mean >= 0 ? "var(--up)" : "var(--down)"; return `<td style="background:color-mix(in srgb, ${col} ${Math.round(a * 55)}%, var(--panel));color:var(--ink)" title="n=${s.n}">${fmtP(s.mean)}</td>`; }).join("")}</tr>`).join("") + "</tbody>";
+}
+$("#oMetric").onchange = renderOpt; $("#oMin").onchange = renderOpt;
+
+// ============================================================ 今日預判
+// 交易所門檻（由 2025 年後注意公告反推驗證）
+const RULE = {
+  "上市": { c1: 32, c1a: 25, gap: 50, c3: 25, tov: 10, brk: 25, k2: [100, 130, 160], pe6: 60, pb6: 6, vol6: 3000, ind6: 4, su7: 15 },
+  "上櫃": { c1: 30, c1a: 23, gap: 40, c3: 27, tov: 5, brk: 20, k2: [100, 140, 160], pe6: 60, pb6: 5, vol6: 2000, ind6: 2, su7: 10 },
+};
+const tickOf = p => p < 10 ? 0.01 : p < 50 ? 0.05 : p < 100 ? 0.1 : p < 500 ? 0.5 : p < 1000 ? 1 : 5;
+const rnd = x => Math.round(x * 100) / 100;
+function ceilT(x) { let t = tickOf(x), v = rnd(Math.ceil(x / t - 1e-7) * t); if (tickOf(v) !== t) { t = tickOf(v); v = rnd(Math.ceil(x / t - 1e-7) * t); } return v; }
+function floorT(x) { let t = tickOf(x), v = rnd(Math.floor(x / t + 1e-7) * t); if (tickOf(v) !== t) { t = tickOf(v); v = rnd(Math.floor(x / t + 1e-7) * t); } return v; }
+function upPx(cl, k5, th) { let P = ceilT(cl * (1 + (th - k5) / 100)); let g = 0; while (k5 + (P / cl - 1) * 100 <= th + 1e-9 && g++ < 5) P = rnd(P + tickOf(P)); return P; }
+function dnPx(cl, k5, th) { const raw = cl * (1 + (-th - k5) / 100); if (raw <= 0) return null; let P = floorT(raw); let g = 0; while (k5 + (P / cl - 1) * 100 >= -th - 1e-9 && g++ < 5) P = rnd(P - tickOf(P)); return P > 0 ? P : null; }
+const FLAG_TXT = { 1: "連3日第1款", 2: "連5日", 4: "10日內6次", 8: "30日內12次" };
+function flagNames(f) { return Object.keys(FLAG_TXT).filter(k => f & k).map(k => FLAG_TXT[k]).join("、"); }
+const KN = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二", "十三"];
+function prog(v, need, hot) { let h = '<span class="prog">'; for (let i = 0; i < need; i++) h += `<i class="${i < v ? (hot ? "hot" : "on") : ""}"></i>`; return h + `</span><span class="progtxt">${v}/${need}</span>`; }
+function tenpaiProb(type) {
+  let n = 0, y = 0;
+  for (const s of SIG) { if (s.ind || !inReg(s.t)) continue; const any = (s.f & 14) > 0; if ((type === "any") !== any) continue; if (s.t >= D.length - 2) continue; n++; if (s.nxt === 2) y++; }
+  return n ? { p: y / n * 100, n } : null;
+}
+// 明天的注意條件
+function nextDayConds(r) {
+  const mk = sMkt(r.s) === "上櫃" ? "上櫃" : "上市", R = RULE[mk], cl = r.cl, k5 = r.k5;
+  const LU = floorT(cl * 1.1), LD = ceilT(cl * 0.9);
+  const anyPath = r.lv === 1 ? (r.f1 & 14) > 0 : false;
+  const lethal1 = r.lv === 1, lethalOther = r.lv === 1 && anyPath;
+  const C = [];
+  const add = (k, dir, desc, P, extra, lethal) => { if (P == null) return; const ok = dir > 0 ? P <= LU : P >= LD; C.push({ k, dir, desc, P, pct: (P / cl - 1) * 100, extra, ok, lethal }); };
+  const p1 = upPx(cl, k5, R.c1);
+  add(1, 1, `6日漲幅加總 > ${R.c1}%（前 5 日已 ${fmt(k5)}%）`, p1, "", lethal1);
+  if (r.b6) { const p1b = Math.max(upPx(cl, k5, R.c1a), ceilT(r.b6 + R.gap)); if (p1b < p1) add(1, 1, `6日漲幅加總 > ${R.c1a}% 且 6日價差 ≥ ${R.gap} 元（起點 ${fmt(r.b6)}）`, p1b, "", lethal1); }
+  add(1, -1, `6日跌幅加總 < -${R.c1}%`, dnPx(cl, k5, R.c1), "", lethal1);
+  const k2 = [[r.b30, 30, R.k2[0]], [r.b60, 60, R.k2[1]], [r.b90, 90, R.k2[2]]].filter(x => x[0]).map(([b, d, th]) => ({ d, th, P: upPx(b, 0, th) }));
+  if (k2.length) { const m = k2.reduce((a, b) => a.P < b.P ? a : b); add(2, 1, `${m.d} 日漲幅 > ${m.th}%（起點 ${fmt(r[{ 30: "b30", 60: "b60", 90: "b90" }[m.d]])}）`, m.P, "", lethalOther); }
+  const p3 = upPx(cl, k5, R.c3), p3d = dnPx(cl, k5, R.c3);
+  const v5 = r.av60 ? Math.ceil(r.av60 * 5) : null, vt = r.sh ? Math.ceil(r.sh * R.tov / 100) : null;
+  add(3, 1, `6日漲幅加總 > ${R.c3}%`, p3, v5 ? `且成交量 ≥ ${v5.toLocaleString()} 張（60 日均量 ${Math.round(r.av60).toLocaleString()} 張 × 5）` : "且成交量 ≥ 60 日均量 5 倍", lethalOther);
+  add(4, 1, `6日漲幅加總 > ${R.c3}%`, p3, vt ? `且週轉率 ≥ ${R.tov}%（約 ${vt.toLocaleString()} 張）` : `且週轉率 ≥ ${R.tov}%`, lethalOther);
+  add(5, 1, `6日漲幅加總 > ${R.c3}%`, p3, `且單一券商買或賣 > ${R.brk}% 成交量`, lethalOther);
+  add(3, -1, `6日跌幅加總 < -${R.c3}%`, p3d, "且量能／週轉率／券商條件（同上）", lethalOther);
+  // 第六款：估值 + 週轉 + 量 +（產業PB倍數 或 單一券商/投資人）
+  if (r.pb > 0) {
+    const needPE = r.pe > 0 ? cl * R.pe6 / r.pe : 0; // 虧損（無本益比）視為符合
+    const needPB = cl * R.pb6 / r.pb;
+    let P6 = Math.max(needPE, needPB), already = P6 <= LD;
+    P6 = already ? null : ceilT(P6);
+    const vol6 = Math.max(R.vol6, r.sh ? Math.ceil(r.sh * 0.05) : 0);
+    const indNow = r.ipb ? r.pb / r.ipb : null, needInd = r.ipb ? ceilT(cl * R.ind6 / (r.pb / r.ipb)) : null;
+    const descPE = r.pe > 0 ? `本益比 ${fmt(r.pe, 1)}` : "本益比 N/A（虧損）";
+    const c6 = { k: 6, dir: 1, desc: `估值偏高：本益比 ≥ ${R.pe6} 或虧損、淨值比 ≥ ${R.pb6}（目前 ${descPE}、淨值比 ${fmt(r.pb, 1)}）`, P: already ? LD : P6, pct: already ? null : (P6 / cl - 1) * 100,
+      extra: `且週轉率 ≥ 5%、成交量 ≥ ${vol6.toLocaleString()} 張；另需淨值比達產業 ${R.ind6} 倍以上（目前約 ${indNow ? fmt(indNow, 1) : "–"} 倍${needInd && indNow < R.ind6 ? `，需收 ≥ ${fmt(needInd)}` : ""}）或單一券商／投資人買賣 ≥10% 且 ≥1 億元`,
+      ok: already || P6 <= LU, lethal: lethalOther, maybe: true, already };
+    C.push(c6);
+  }
+  // 第七款：看今天（明天的前一營業日）的融資券
+  if (r.ssr != null) {
+    const mult = r.ssrmin > 0 ? r.ssr / r.ssrmin : (r.ssr > 0 ? Infinity : 0);
+    const okM = r.ssr >= 20 && mult >= 4 && (r.lu ?? 0) >= 25 && (r.su ?? 0) >= R.su7;
+    C.push({ k: 7, dir: 1, desc: `6日漲幅加總 > ${R.c3}%，且今天券資比 ≥ 20% 並為 6 日最低 4 倍、融資使用率 ≥ 25%、融券使用率 ≥ ${R.su7}%`, P: p3, pct: (p3 / cl - 1) * 100,
+      extra: `今天：券資比 ${fmt(r.ssr, 1)}%（6 日最低的 ${isFinite(mult) ? fmt(mult, 1) : "∞"} 倍）、融資使用率 ${fmt(r.lu, 1)}%、融券使用率 ${fmt(r.su, 1)}%${okM ? "，融資券條件已達標" : "，融資券條件未達標"}`,
+      ok: okM && p3 <= LU, lethal: lethalOther, failNote: okM ? null : "融資券未達標" });
+  }
+  return { C, LU, LD, mk, R, anyPath };
+}
+function fcDetail(r, nd, lv) {
+  const t = DATA.forecast.t;
+  const hot = r.lv === 1;
+  const paths = [["連3日第1款", r.r1, 3, r.f1 & 1], ["連5日", r.ra, 5, r.f1 & 2], ["10日內6次", r.c10, 6, r.f1 & 4], ["30日內12次", r.c30, 12, r.f1 & 8]];
+  const pathHtml = paths.map(([n, v, need, on]) => `<div class="pr"><span>${n}</span>${prog(v, need, on)}${on ? `<span class="chip l1">明天${n === "連3日第1款" ? "第1款" : "任一款"}→處置</span>` : ""}</div>`).join("");
+  const rows = nd.C.map(c => {
+    const res = c.ok ? (c.lethal ? `<span class="chip l1">→ 處置${c.maybe ? "（可能）" : ""}</span>` : `<span class="chip l2">→ 注意${c.maybe ? "（可能）" : ""}</span>`) : `<span class="mut">${c.failNote || "漲跌停也到不了"}</span>`;
+    const px = c.already ? `<span class="mut">價位已符合</span>` : `${c.dir > 0 ? "≥" : "≤"} ${fmt(c.P)}`;
+    return `<tr class="${c.ok ? "" : "dim"}"><td>第${KN[c.k]}款${c.k === 6 || c.k === 7 ? "" : (c.dir > 0 ? " ↑" : " ↓")}</td><td style="white-space:normal">${c.desc}${c.extra ? `<br><span class="mut">${c.extra}</span>` : ""}</td><td class="n ${c.dir > 0 ? "up" : "down"}">${px}</td><td class="n ${c.dir > 0 ? "up" : "down"}">${c.pct == null ? "–" : fmtP(c.pct, 1)}</td><td>${res}</td></tr>`;
+  }).join("");
+  const hist = r.h.map(h => `<li><span class="num">${D[h[0]].slice(5)}</span> ${h[1].length ? h[1].map(k => "第" + KN[k] + "款").join("、") : "—"}</li>`).join("");
+  return `<div class="fcd">
+    <div><h4>累計進度（明天再一次就會怎樣）</h4>${pathHtml}
+      <p class="mut" style="font-size:12px;margin:8px 0 0">平盤 ${fmt(r.cl)}　漲停 <span class="up">${fmt(nd.LU)}</span>　跌停 <span class="down">${fmt(nd.LD)}</span></p>
+      <p style="font-size:12px;margin:6px 0 0">${ordChip(nextOrd(r, lv || 1))} ${ordNote(nextOrd(r, lv || 1))}</p>
+      ${hot ? `<p style="font-size:12px;margin:6px 0 0">若明天觸發：${dateAt(t + 2)} 起${nextOrd(r, 1).o === 2 ? "再次" : "第一次"}處置 5 個營業日，每 2 分鐘撮合</p>` : ""}</div>
+    <div style="min-width:0"><h4>明天收盤後會被公布注意的條件（任一成立）</h4><div class="tw"><table class="cond"><thead><tr><th>款別</th><th>條件</th><th class="n">收盤價</th><th class="n">漲跌</th><th>結果</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="mut" style="font-size:12px;margin:6px 0 0">第六款的「單一券商／投資人買賣占比」盤後才知道，故標示為可能；第八款只適用 TDR 溢折價。第一、三～五款另需漲跌幅與大盤、同類股差幅達 20%，強勢股通常都符合。</p></div>
+    <div><h4>計入中的注意紀錄</h4><ul class="hist">${hist || "<li class='mut'>無</li>"}</ul></div>
+  </div>`;
+}
+// 處置次數：觸發日與前次處置觸發日相差不到 30 個營業日 → 再次處置
+function nextOrd(r, lv) {
+  const T = DATA.forecast.t + lv; // 最快觸發日
+  if (r.pT == null || T - r.pT >= 30) return { o: 1, until: null };
+  return { o: 2, until: r.pT + 30, prev: r.pT };
+}
+function ordChip(oi) { return oi.o === 2 ? `<span class="chip l1">再次處置</span>` : `<span class="chip l3">第一次處置</span>`; }
+function ordNote(oi) {
+  if (oi.o === 2) return `前次處置觸發日 ${D[oi.prev]}，30 個營業日內再被處置算「再次處置」（${dateAt(oi.until - 1)} 前觸發都算），需全額預收款券`;
+  return "最近 30 個營業日沒有處置紀錄，算「第一次處置」";
+}
+let fcOpen = new Set();
+function renderFc() {
+  const F = DATA.forecast, t = F.t, showInd = $("#fcShowInd").checked;
+  const rows1 = F.rows.filter(r => r.lv === 1 && (showInd || !r.ind)), rows2 = F.rows.filter(r => r.lv === 2 && !r.ind);
+  const pAny = tenpaiProb("any"), pC1 = tenpaiProb("c1");
+  const curEv = F.cur.map(k => EV[k]);
+  $("#fcStats").innerHTML = [
+    [rows1.length, "差 1 次就處置", "l1"], [rows2.length, "差 2 次處置", "l2"], [curEv.length, "處置中／即將處置", "l3"]
+  ].map(([v, l, c]) => `<div class="stat"><span><span class="chip ${c}">${l}</span></span><b class="num">${v}</b><span>資料日 ${D[t]}，適用 ${dateAt(t + 1)} 交易日</span></div>`).join("");
+  const hdr = `<thead><tr><th></th><th>代號</th><th>名稱</th><th>市場</th><th class="n">收盤</th><th class="n">6日加總</th><th>處置路徑</th><th>若處置</th><th class="n">第1款觸發 ↑ / ↓</th><th class="n">第3–5款門檻 ↑</th><th class="n">歷史進處置率</th></tr></thead>`;
+  const row = (r, lv) => {
+    const nd = nextDayConds(r); const c1u = nd.C.filter(c => c.k === 1 && c.dir > 0).reduce((a, b) => !a || b.P < a.P ? b : a, null), c1d = nd.C.find(c => c.k === 1 && c.dir < 0), c3 = nd.C.find(c => c.k === 3 && c.dir > 0);
+    const any = (lv === 1 ? r.f1 : r.f2) & 14; const pr = any ? pAny : pC1;
+    const path = lv === 1 ? (r.f1 & 14 ? `<span class="chip l1">明天任一注意即處置</span>` : `<span class="chip l2">明天第1款才處置</span>`) + `<br><span class="mut" style="font-size:12px">${flagNames(r.f1)}</span>` : `<span class="mut">${flagNames(r.f2)}</span>`;
+    const pc = c => c ? `<span class="${c.dir > 0 ? "up" : "down"} ${c.ok ? "" : "mut"}">${fmt(c.P)}</span><span class="mut" style="font-size:11px"> ${fmtP(c.pct, 1)}</span>` : "–";
+    const key = r.s + ":" + lv, open = fcOpen.has(key);
+    return `<tr class="click" data-k="${key}"><td class="mut">${open ? "▾" : "▸"}</td><td class="num">${esc(sId(r.s))}</td><td>${esc(sName(r.s))}${sFut(r.s) ? ' <span class="chip l3">股期</span>' : ""}${r.ind ? ' <span class="chip l3">處置中</span>' : ""}</td><td>${nd.mk}</td><td class="n">${fmt(r.cl)}</td><td class="n ${cls(r.s6)}">${fmtP(r.s6)}</td><td style="white-space:normal;min-width:150px">${path}</td><td>${ordChip(nextOrd(r, lv))}</td><td class="n">${pc(c1u)}<br>${pc(c1d)}</td><td class="n">${pc(c3)}</td><td class="n">${lv === 1 && pr ? fmt(pr.p, 1) + "%" : "–"}</td></tr>` +
+      (open ? `<tr class="detail"><td colspan="11">${fcDetail(r, nd, lv)}</td></tr>` : "");
+  };
+  const sortFn = (a, b) => (b.f1 & 14) - (a.f1 & 14) || (b.s6 || 0) - (a.s6 || 0);
+  $("#fc1").innerHTML = rows1.length ? hdr + "<tbody>" + rows1.sort(sortFn).map(r => row(r, 1)).join("") + "</tbody>" : '<tbody><tr><td class="empty">目前沒有差 1 次的股票</td></tr></tbody>';
+  $("#fc2").innerHTML = rows2.length ? hdr + "<tbody>" + rows2.sort((a, b) => (b.s6 || 0) - (a.s6 || 0)).map(r => row(r, 2)).join("") + "</tbody>" : '<tbody><tr><td class="empty">目前沒有差 2 次的股票</td></tr></tbody>';
+  $$("#fc1 tr.click, #fc2 tr.click").forEach(tr => tr.onclick = () => { const k = tr.dataset.k; fcOpen.has(k) ? fcOpen.delete(k) : fcOpen.add(k); renderFc(); });
+  $("#fc1sub").textContent = pAny ? `歷史隔日觸發率：任一注意即處置型 ${fmt(pAny.p, 1)}%（n=${pAny.n}）、第1款型 ${pC1 ? fmt(pC1.p, 1) + "%" : "–"}` : "";
+  // LINE 轉貼文字
+  const lines = [`明日處置預判（資料日 ${D[t]}，適用 ${dateAt(t + 1).replace("＊", "")}）`, `【差1次就處置】${rows1.length} 檔`];
+  for (const r of rows1) { const nd = nextDayConds(r); const u = nd.C.filter(c => c.k === 1 && c.dir > 0 && c.ok).sort((a, b) => a.P - b.P)[0]; lines.push(`${sName(r.s)}(${sId(r.s)}) ${nd.mk} 收${fmt(r.cl)}｜${flagNames(r.f1)}｜${r.f1 & 14 ? "明天任一注意即處置" : "明天第1款即處置"}${u ? `｜第1款觸發 ≥${fmt(u.P)}(${fmtP(u.pct, 1)})` : "｜第1款漲停也到不了"}｜最快 ${dateAt(t + 2).replace("＊", "")} ${nextOrd(r, 1).o === 2 ? "再次" : "第一次"}處置`); }
+  lines.push(`【差2次】${rows2.length} 檔`); for (const r of rows2) lines.push(`${sName(r.s)}(${sId(r.s)}) ${flagNames(r.f2)}｜若處置為${nextOrd(r, 2).o === 2 ? "再次" : "第一次"}處置`);
+  $("#fcCopyBox").value = lines.join("\n");
+  // 處置中
+  const fwd = dayStats({}, "cc", "fwd").rows, oc = dayStats({}, "oc", "fwd").rows;
+  const get = (rows, lbl) => rows.find(r => r.label === lbl);
+  $("#fc3").innerHTML = curEv.length ? `<thead><tr><th>代號</th><th>名稱</th><th>次別</th><th class="n">撮合</th><th>開始</th><th>結束</th><th class="n">明天是</th><th class="n">剩餘</th><th class="n">歷史該天上漲率</th><th class="n">歷史該天當沖空</th><th>處置原因</th></tr></thead><tbody>` +
+    curEv.sort((a, b) => a.en - b.en).map(e => {
+      const k = t + 1 - e.st + 1, left = e.en - t; const lbl = "D" + k; const a = get(fwd, lbl), b = get(oc, lbl);
+      return `<tr><td class="num">${esc(sId(e.s))}</td><td>${esc(sName(e.s))}</td><td>${e.o === 2 ? '<span class="chip l1">再次</span>' : '<span class="chip l3">第一次</span>'}</td><td class="n">${e.m ? e.m + " 分" : "–"}</td><td class="num">${dateAt(e.st)}</td><td class="num">${dateAt(e.en)}</td><td class="n">${k >= 1 && k <= e.n ? `D${k}／共 ${e.n} 天` : k > e.n ? "出關" : "未開始"}</td><td class="n">${Math.max(0, left)}</td><td class="n">${a && a.n ? fmt(a.up, 1) + "%" : "–"}</td><td class="n ${b && b.n ? cls(-b.mean) : ""}">${b && b.n ? fmtP(-b.mean) : "–"}</td><td style="white-space:normal;min-width:220px;font-size:12px" class="mut">${esc(e.why || e.tw)}</td></tr>`;
+    }).join("") + "</tbody>" : '<tbody><tr><td class="empty">目前沒有處置中的股票</td></tr></tbody>';
+}
+$("#fcShowInd").onchange = renderFc;
+$("#fcCopy").onclick = () => {
+  const txt = $("#fcCopyBox").value, msg = $("#fcCopyMsg");
+  const fallback = () => { const b = $("#fcCopyBox"); b.hidden = false; b.focus(); b.select(); msg.textContent = "已選取文字，請按 Ctrl+C 複製"; };
+  try { navigator.clipboard.writeText(txt).then(() => { msg.textContent = "已複製"; }, fallback); } catch (e) { fallback(); }
+};
+
+// ============================================================ 規則驗證
+function renderRule() {
+  const cov = { old: [0, 0], new: [0, 0] }; const byFlag = {};
+  for (const e of EV) { if (e.st >= D.length || e.tp < 0) continue; const k = e.st >= RI ? "new" : "old"; cov[k][1]++; if (e.tp > 0) cov[k][0]++; }
+  const prec = {}; for (const reg of ["old", "new"]) { let n = 0, y = 0, y5 = 0; for (const s of SIG) { if (s.ind || !inReg(s.t, reg) || s.t >= D.length - 2) continue; n++; if (s.nxt === 2) y++; if (s.nxt > 0) y5++; } prec[reg] = [y, y5, n]; }
+  const pc = (a, b) => b ? (a / b * 100).toFixed(1) + "%" : "–";
+  $("#ruleCov").innerHTML = `<div class="tw"><table style="max-width:680px"><thead><tr><th></th><th class="n">舊制</th><th class="n">新制</th></tr></thead><tbody>
+    <tr><td>處置事件中，前一天已被判為聽牌的比例（覆蓋率）</td><td class="n">${pc(...cov.old)} <span class="mut">(${cov.old[1]})</span></td><td class="n">${pc(...cov.new)} <span class="mut">(${cov.new[1]})</span></td></tr>
+    <tr><td>聽牌後隔日即觸發處置的比例</td><td class="n">${pc(prec.old[0], prec.old[2])} <span class="mut">(${prec.old[2]})</span></td><td class="n">${pc(prec.new[0], prec.new[2])} <span class="mut">(${prec.new[2]})</span></td></tr>
+    <tr><td>聽牌後 10 個交易日內進處置的比例</td><td class="n">${pc(prec.old[1], prec.old[2])}</td><td class="n">${pc(prec.new[1], prec.new[2])}</td></tr></tbody></table></div>
+    <p class="mut" style="font-size:12px">覆蓋率低於 100% 的部分，多半是因當沖過高、第 1 款連 3 日但前一天才首次聽牌等特殊路徑，或注意公告文字未被辨識。</p>`;
+  const m = DATA.meta;
+  $("#ruleMeta").textContent = `資料：${D[0]} ～ ${m.last}，處置事件 ${EV.length} 筆、聽牌訊號 ${SIG.length} 筆、注意紀錄 ${m.nAtt} 筆；產生時間 ${m.generated}。處置後注意次數${m.reset ? "歸零重算" : "不歸零"}。`;
+}
+
+// ============================================================ render
+function renderTab() { if (TAB === "fc") renderFc(); else if (TAB === "day") renderDay(); else if (TAB === "bt") renderBt(); else if (TAB === "opt") renderOpt(); else renderRule(); }
+function renderAll() { renderTab(); }
+$("#asof").textContent = `資料至 ${DATA.meta.last}・產生於 ${DATA.meta.generated}`;
+// 放在 GitHub Pages 時：顯示「更新資料」按鈕，連到手動執行更新的 Actions 頁面
+(function () {
+  const h = location.hostname; if (!/\.github\.io$/.test(h)) return;
+  const owner = h.split(".")[0], repo = location.pathname.split("/").filter(Boolean)[0] || (owner + ".github.io");
+  const a = $("#ghUpdate"); a.href = `https://github.com/${owner}/${repo}/actions/workflows/update.yml`; a.hidden = false;
+  a.title = "開啟 GitHub Actions，按 Run workflow 立即重新下載資料並重建網頁（約 5～10 分鐘）";
+})();
+syncSrc();
+$$("#regime button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === REG));
+let t0 = (location.hash || "").slice(1); if (!["fc", "day", "bt", "opt", "rule"].includes(t0)) { try { t0 = localStorage.getItem("dsp_tab") || "fc"; } catch (e) { t0 = "fc"; } }
+applyCfg(PRESETS.d1dt);
+setTab(t0);
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(renderTab, 150); });
+})();
+</script>
