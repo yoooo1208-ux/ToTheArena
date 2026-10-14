@@ -154,6 +154,7 @@ th.sep,td.sep{border-left:1px solid var(--line)}
 <main class="wrap">
 <!-- ===================== 今日預判 ===================== -->
 <section class="page" id="p-fc">
+  <p class="note warn" id="fcLag" hidden></p>
   <div class="cards3" id="fcStats"></div>
   <div class="panel">
     <h2>差 1 次就處置 <small id="fc1sub"></small></h2>
@@ -856,23 +857,37 @@ function ordNote(oi) {
   return "最近 30 個營業日沒有處置紀錄，算「第一次處置」";
 }
 let fcOpen = new Set();
+// 價格比注意股新一天時：用實際收盤比對觸發條件
+function actualCell(r, nd, lv) {
+  if (!r.nx) return "–";
+  const [o, h, l, c, v] = r.nx; const pct = (c / r.cl - 1) * 100;
+  const hit = nd.C.filter(x => x.ok && !x.maybe && x.k !== 7 && (x.dir > 0 ? c >= x.P : c <= x.P) && (x.k === 1 || x.k === 2));
+  const hitV = nd.C.filter(x => x.ok && (x.k === 3 || x.k === 4 || x.k === 5) && x.dir > 0 && c >= x.P);
+  let tag = "";
+  if (hit.length) tag = hit.some(x => x.lethal) ? `<br><span class="chip l1">已達第${KN[hit[0].k]}款 → ${lv === 1 ? "今晚可能公告處置" : "差1次"}</span>` : `<br><span class="chip l2">已達第${KN[hit[0].k]}款</span>`;
+  else if (hitV.length) tag = `<br><span class="chip l2">價格已達第三～五款，看量／週轉／券商</span>`;
+  return `<span class="${cls(pct)}">${fmt(c)}</span> <span class="mut" style="font-size:11px">${fmtP(pct, 1)}</span>${v != null ? `<br><span class="mut" style="font-size:11px">${v.toLocaleString()} 張</span>` : ""}${tag}`;
+}
 function renderFc() {
   const F = DATA.forecast, t = F.t, showInd = $("#fcShowInd").checked;
+  const lag = t < D.length - 1;
+  $("#fcLag").hidden = !lag;
+  if (lag) $("#fcLag").textContent = `注意股與處置公告目前只更新到 ${D[t]}，${D[t + 1]} 的公告還沒出來（通常晚上才公布），所以下面以 ${D[t]} 收盤後的狀態預判 ${D[t + 1]}，並用 ${D[t + 1]} 的實際收盤比對觸發價。晚上資料更新後再按「更新資料」即可。`;
   const rows1 = F.rows.filter(r => r.lv === 1 && (showInd || !r.ind)), rows2 = F.rows.filter(r => r.lv === 2 && !r.ind);
   const pAny = tenpaiProb("any"), pC1 = tenpaiProb("c1");
   const curEv = F.cur.map(k => EV[k]);
   $("#fcStats").innerHTML = [
     [rows1.length, "差 1 次就處置", "l1"], [rows2.length, "差 2 次處置", "l2"], [curEv.length, "處置中／即將處置", "l3"]
   ].map(([v, l, c]) => `<div class="stat"><span><span class="chip ${c}">${l}</span></span><b class="num">${v}</b><span>資料日 ${D[t]}，適用 ${dateAt(t + 1)} 交易日</span></div>`).join("");
-  const hdr = `<thead><tr><th></th><th>代號</th><th>名稱</th><th>市場</th><th class="n">收盤</th><th class="n">6日加總</th><th>處置路徑</th><th>若處置</th><th class="n">第1款觸發 ↑ / ↓</th><th class="n">第3–5款門檻 ↑</th><th class="n">歷史進處置率</th></tr></thead>`;
+  const hdr = `<thead><tr><th></th><th>代號</th><th>名稱</th><th>市場</th><th class="n">收盤</th><th class="n">6日加總</th><th>處置路徑</th><th>若處置</th><th class="n">第1款觸發 ↑ / ↓</th><th class="n">第3–5款門檻 ↑</th>${lag ? `<th class="n">${D[t + 1].slice(5)} 實際收盤</th>` : ""}<th class="n">歷史進處置率</th></tr></thead>`;
   const row = (r, lv) => {
     const nd = nextDayConds(r); const c1u = nd.C.filter(c => c.k === 1 && c.dir > 0).reduce((a, b) => !a || b.P < a.P ? b : a, null), c1d = nd.C.find(c => c.k === 1 && c.dir < 0), c3 = nd.C.find(c => c.k === 3 && c.dir > 0);
     const any = (lv === 1 ? r.f1 : r.f2) & 14; const pr = any ? pAny : pC1;
     const path = lv === 1 ? (r.f1 & 14 ? `<span class="chip l1">明天任一注意即處置</span>` : `<span class="chip l2">明天第1款才處置</span>`) + `<br><span class="mut" style="font-size:12px">${flagNames(r.f1)}</span>` : `<span class="mut">${flagNames(r.f2)}</span>`;
     const pc = c => c ? `<span class="${c.dir > 0 ? "up" : "down"} ${c.ok ? "" : "mut"}">${fmt(c.P)}</span><span class="mut" style="font-size:11px"> ${fmtP(c.pct, 1)}</span>` : "–";
     const key = r.s + ":" + lv, open = fcOpen.has(key);
-    return `<tr class="click" data-k="${key}"><td class="mut">${open ? "▾" : "▸"}</td><td class="num">${esc(sId(r.s))}</td><td>${esc(sName(r.s))}${sFut(r.s) ? ' <span class="chip l3">股期</span>' : ""}${r.ind ? ' <span class="chip l3">處置中</span>' : ""}</td><td>${nd.mk}</td><td class="n">${fmt(r.cl)}</td><td class="n ${cls(r.s6)}">${fmtP(r.s6)}</td><td style="white-space:normal;min-width:150px">${path}</td><td>${ordChip(nextOrd(r, lv))}</td><td class="n">${pc(c1u)}<br>${pc(c1d)}</td><td class="n">${pc(c3)}</td><td class="n">${lv === 1 && pr ? fmt(pr.p, 1) + "%" : "–"}</td></tr>` +
-      (open ? `<tr class="detail"><td colspan="11">${fcDetail(r, nd, lv)}</td></tr>` : "");
+    return `<tr class="click" data-k="${key}"><td class="mut">${open ? "▾" : "▸"}</td><td class="num">${esc(sId(r.s))}</td><td>${esc(sName(r.s))}${sFut(r.s) ? ' <span class="chip l3">股期</span>' : ""}${r.ind ? ' <span class="chip l3">處置中</span>' : ""}</td><td>${nd.mk}</td><td class="n">${fmt(r.cl)}</td><td class="n ${cls(r.s6)}">${fmtP(r.s6)}</td><td style="white-space:normal;min-width:150px">${path}</td><td>${ordChip(nextOrd(r, lv))}</td><td class="n">${pc(c1u)}<br>${pc(c1d)}</td><td class="n">${pc(c3)}</td>${lag ? `<td class="n">${actualCell(r, nd, lv)}</td>` : ""}<td class="n">${lv === 1 && pr ? fmt(pr.p, 1) + "%" : "–"}</td></tr>` +
+      (open ? `<tr class="detail"><td colspan="${lag ? 12 : 11}">${fcDetail(r, nd, lv)}</td></tr>` : "");
   };
   const sortFn = (a, b) => (b.f1 & 14) - (a.f1 & 14) || (b.s6 || 0) - (a.s6 || 0);
   $("#fc1").innerHTML = rows1.length ? hdr + "<tbody>" + rows1.sort(sortFn).map(r => row(r, 1)).join("") + "</tbody>" : '<tbody><tr><td class="empty">目前沒有差 1 次的股票</td></tr></tbody>';

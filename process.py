@@ -477,7 +477,11 @@ log("事件輸出", len(evo), "聽牌覆蓋率", cov)
 
 # ---------------------------------------------------------------- 今日預判
 log("計算最新預判...")
-t = NDATE - 1
+# 注意股公告通常晚上才更新：若注意股資料比價格少一天，用「注意股最後一天」當預判基準日
+ATT_LAST = int(att["_i"].max()) if len(att) else NDATE - 1
+t = min(NDATE - 1, ATT_LAST)
+if t < NDATE - 1:
+    log("注意股資料只到", DATES[t].date(), "，價格到", DATES[-1].date(), "→ 以", DATES[t].date(), "為預判基準")
 fc = []
 recent_att = att[att["_i"] >= t - 35]
 indpb = {}
@@ -531,6 +535,7 @@ for j, s in enumerate(STOCKS):
                    sh=shares.get(s), vt=None if np.isnan(Vv[t, j]) else round(float(Vv[t, j]) / 1000.0, 1),
                    v=None if np.isnan(V20[t, j]) else int(round(V20[t, j])),
                    ind=int(in_disp[t, j]), h=hist,
+                   nx=None if t + 1 >= NDATE or np.isnan(Cv[t + 1, j]) else [round(float(Ov[t + 1, j]), 2), round(float(Hv[t + 1, j]), 2), round(float(Lv[t + 1, j]), 2), round(float(Cv[t + 1, j]), 2), None if np.isnan(Vv[t + 1, j]) else round(float(Vv[t + 1, j]) / 1000.0)],
                    pT=max([int(e_.sti) - 1 for e_ in ev[ev["s"] == s].itertuples() if int(e_.sti) - 1 <= t], default=None),
                    pe=fv(PE_, t, j), pb=fv(PB_, t, j), ipb=round(indpb[s], 3) if s in indpb else None,
                    ssr=margin_at(t, j)[0], ssrmin=(min([x for x in [margin_at(t - k, j)[0] for k in range(6)] if x is not None], default=None)),
@@ -569,7 +574,7 @@ payload = dict(
     meta=dict(generated=dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).strftime("%Y-%m-%d %H:%M"), last=str(LAST.date()),
               regime=str(REGIME_DATE.date()), regimeIdx=date_to_idx(REGIME_DATE),
               start=str(ANALYSIS_START.date()), reset=RESET_AFTER_DISPOSAL, coverage=cov,
-              nAtt=int(len(att)), diag=DIAG, countSet=sorted(COUNT_SET), hasFut=len(futset) > 0),
+              nAtt=int(len(att)), attLast=str(DATES[t].date()), priceLast=str(LAST.date()), diag=DIAG, countSet=sorted(COUNT_SET), hasFut=len(futset) > 0),
     dates=[d.strftime("%Y-%m-%d") for d in DATES],
     stocks=stocks_out,
     sigCols=["s", "t", "f", "r1", "ra", "c10", "c30", "ret6", "v", "ind", "first", "nxt"],
