@@ -42,7 +42,7 @@ jobs:
           mkdir -p site
           python process.py finlab_export site
           mv "site/處置股分析.html" site/index.html
-          rm -f site/artifact_body.html
+          rm -f site/artifact_body.html site/disposal_data.json
           touch site/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
