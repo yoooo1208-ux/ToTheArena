@@ -726,8 +726,11 @@ $("#oRun").onclick = () => {
   const cands = candidates(c), jobs = [];
   const dv = $("#oDir").value, dirs = dv === "both" ? [-1, 1] : [+dv];
   for (const dir of dirs) for (const en of ens) for (const ex of exs) for (const sl of SLs) for (const tp of TPs) jobs.push({ dir, en, ex, sl, tp });
-  const out = []; let i = 0; $("#oRun").disabled = true;
+  const out = []; let i = 0; $("#oRun").disabled = true; $("#oRun").textContent = "計算中…";
+  $("#oSub").textContent = `正在計算 ${jobs.length} 組（樣本 ${cands.length} 筆）…`;
+  if (!cands.length || !jobs.length) { $("#oRun").disabled = false; $("#oRun").textContent = "開始搜尋"; $("#oSub").textContent = cands.length ? "沒有可計算的組合，請檢查進出場代碼" : "篩選後沒有樣本，請放寬策略回測頁的篩選條件"; return; }
   (function step() {
+    try {
     const t0 = performance.now();
     while (i < jobs.length && performance.now() - t0 < 40) {
       const jb = jobs[i++]; const R = { all: [], old: [], new: [] };
@@ -735,7 +738,8 @@ $("#oRun").onclick = () => {
       if (R.all.length) out.push(Object.assign(jb, { all: stats(R.all), old: stats(R.old), new: stats(R.new) }));
     }
     $("#oProg").style.width = (i / jobs.length * 100).toFixed(1) + "%";
-    if (i < jobs.length) setTimeout(step, 0); else { $("#oRun").disabled = false; optRes = { out, c }; renderOpt(); }
+    if (i < jobs.length) setTimeout(step, 0); else { $("#oRun").disabled = false; $("#oRun").textContent = "開始搜尋"; optRes = { out, c }; renderOpt(); $("#oTable").scrollIntoView({ behavior: "smooth", block: "start" }); }
+    } catch (err) { $("#oRun").disabled = false; $("#oRun").textContent = "開始搜尋"; $("#oSub").textContent = "計算出錯：" + (err && err.message || err) + "（請截圖給 Claude）"; }
   })();
 };
 function renderOpt() {
