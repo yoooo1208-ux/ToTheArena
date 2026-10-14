@@ -127,6 +127,12 @@ tr.subrow td:first-child{padding-left:20px;color:var(--muted)}
 th.grp{text-align:center;color:var(--ink);font-weight:600;border-bottom:1px solid var(--line)}
 th.sep,td.sep{border-left:1px solid var(--line)}
 .ghbtn{padding:3px 10px;font-size:12px;text-decoration:none;align-self:center}
+.kchips{display:flex;flex-wrap:wrap;gap:6px}
+.kchip{display:inline-flex;cursor:pointer}
+.kchip input{position:absolute;opacity:0;width:1px;height:1px}
+.kchip span{font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:var(--panel)}
+.kchip input:checked+span{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.kchip input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .empty{color:var(--muted);padding:20px 0;text-align:center}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (max-width:560px){.brand h1{font-size:19px} .kpi b{font-size:17px}}
@@ -144,6 +150,7 @@ th.sep,td.sep{border-left:1px solid var(--line)}
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-t="fc" aria-selected="true">今日預判</button>
       <button role="tab" data-t="day" aria-selected="false">處置逐日統計</button>
+      <button role="tab" data-t="ntc" aria-selected="false">注意股分析</button>
       <button role="tab" data-t="bt" aria-selected="false">策略回測</button>
       <button role="tab" data-t="opt" aria-selected="false">參數最佳化</button>
       <button role="tab" data-t="rule" aria-selected="false">規則與驗證</button>
@@ -203,6 +210,56 @@ th.sep,td.sep{border-left:1px solid var(--line)}
     <div class="panel"><h2>平均報酬 <small id="dChartMsub">%</small></h2><div class="chart" id="dChartM"></div></div>
   </div>
   <div class="panel"><h2>逐日明細 <small>T=觸發日（公告處置當天），D1=處置第一天</small></h2><div class="tw"><table id="dTable"></table></div></div>
+</section>
+
+<!-- ===================== 注意股分析 ===================== -->
+<section class="page" id="p-ntc" hidden>
+  <div class="panel">
+    <h2>注意股進場</h2>
+    <p class="lead">樣本是 2016 年以來每一筆「公布注意」（每檔每天一筆，約 6 萬筆）。T＝被公布注意的那天（收盤後才公布），D1＝隔天。用「隔天開盤」進場不會用到未來資訊；「T 收盤」需要盤中自己判斷今天會被注意。</p>
+    <div class="filters" id="nForm" style="margin-top:12px">
+      <label class="f"><span>方向</span><select id="nDir"><option value="1">做多</option><option value="-1">做空</option></select></label>
+      <label class="f"><span>進場</span><select id="nIn"><option value="D1o">D1 開盤（隔天開盤）</option><option value="Tc">T 收盤（注意當天）</option><option value="D1c">D1 收盤</option></select></label>
+      <label class="f"><span>出場</span><select id="nOut"></select></label>
+      <label class="f"><span>停損 %（0＝不設）</span><input type="number" id="nSL" value="0" min="0" step="0.5"></label>
+      <label class="f"><span>停利 %（0＝不設）</span><input type="number" id="nTP" value="0" min="0" step="0.5"></label>
+      <label class="f"><span>來回成本 %</span><input type="number" id="nCost" value="0.4" min="0" step="0.05"></label>
+    </div>
+    <div class="filters" style="margin-top:12px;align-items:center">
+      <span class="f"><span>款別</span></span>
+      <div class="kchips" id="nK"></div>
+      <label class="f"><span>款別條件</span><select id="nKMode"><option value="any">含任一勾選款</option><option value="all">勾選款全部都有</option><option value="only">只有勾選的款</option></select></label>
+    </div>
+    <div class="filters" style="margin-top:12px">
+      <label class="f"><span>30 日內第幾次注意</span><select id="nCnt"><option value="0">全部</option><option value="1">第 1 次</option><option value="2">第 2～3 次</option><option value="4">第 4～5 次</option><option value="6">第 6 次以上</option></select></label>
+      <label class="f"><span>注意後狀態</span><select id="nTp"><option value="">全部</option><option value="1">已聽牌（差 1 次處置）</option><option value="0">未聽牌</option></select></label>
+      <label class="f"><span>6 日漲跌加總</span><select id="nRet"><option value="">全部</option><option value="up">上漲</option><option value="dn">下跌</option></select></label>
+      <label class="f"><span>市場</span><select id="nMkt"><option value="">全部</option><option>上市</option><option>上櫃</option></select></label>
+      <label class="f"><span>股票期貨</span><select id="nFut"><option value="">全部</option><option value="1">有股期</option><option value="0">無股期</option></select></label>
+      <label class="chk"><input type="checkbox" id="nExInd" checked> 排除處置中</label>
+    </div>
+    <details style="margin-top:8px"><summary class="mut" style="cursor:pointer;font-size:13px">其他篩選</summary>
+      <div class="filters" style="margin-top:10px">
+        <label class="f"><span>最低股價</span><input type="number" id="nPx" value="10" min="0"></label>
+        <label class="f"><span>最低 20 日均量（張）</span><input type="number" id="nVol" value="300" min="0"></label>
+        <label class="f"><span>起始年</span><select id="nYear"></select></label>
+      </div>
+    </details>
+    <p class="note" id="nNote" style="margin-top:12px"></p>
+  </div>
+  <div class="kpis" id="nKpi"></div>
+  <div class="two">
+    <div class="panel"><h2>累積報酬・舊制 <small>8/10 前</small></h2><div class="eqk" id="nEqOldK"></div><div class="chart" id="nEqOld"></div></div>
+    <div class="panel"><h2>累積報酬・新制 <small>8/10 起</small></h2><div class="eqk" id="nEqNewK"></div><div class="chart" id="nEqNew"></div></div>
+  </div>
+  <div class="panel"><h2>依款別比較 <small>同一組進出場設定；「含此款」不受上方款別勾選影響</small></h2><div class="tw"><table id="nByK"></table></div></div>
+  <div class="two">
+    <div class="panel"><h2>依 30 日內第幾次注意</h2><div class="tw"><table id="nByC"></table></div></div>
+    <div class="panel"><h2>依注意後狀態</h2><div class="tw"><table id="nByS"></table></div>
+      <p class="mut" style="font-size:12px;margin:8px 0 0">「之後 10 天內進處置」是事後才知道的分類，只用來看差異，不能當進場條件。</p></div>
+  </div>
+  <div class="panel"><h2>注意後逐日走勢 <small>從 T 收盤起算的平均累積漲跌（股價本身，不含方向與成本），淡色＝上漲機率低於 50%</small></h2><div class="chart" id="nPath"></div><div class="tw" style="margin-top:10px"><table id="nPathT"></table></div></div>
+  <div class="panel"><h2>熱圖：款別 × 持有到第幾天 <small id="nHmSub"></small></h2><div class="tw"><table class="hm" id="nHm"></table></div></div>
 </section>
 
 <!-- ===================== 回測 ===================== -->
@@ -319,10 +376,17 @@ th.sep,td.sep{border-left:1px solid var(--line)}
 </section>
 </main>
 <div id="tip" hidden></div>
+<script id="dataz" type="application/octet-stream">/*__DATAGZ__*/</script>
 
 <script>
-const DATA = /*__DATA__*/null;
-(function(){
+// 資料以 gzip + base64 內嵌，載入時在瀏覽器解壓
+async function __loadData() {
+  const b64 = document.getElementById("dataz").textContent.trim();
+  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const stream = new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(stream).text());
+}
+__loadData().then(function (DATA) {
 "use strict";
 const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
 const D = DATA.dates, RI = DATA.meta.regimeIdx, ST = DATA.stocks;
@@ -351,6 +415,9 @@ function bar(j, i) {
   for (const g of segs) { const k = i - g[0]; if (k >= 0 && k < g[4].length) { const c = g[4][k]; if (c == null) return null; return { o: g[1][k] ?? c, h: g[2][k] ?? c, l: g[3][k] ?? c, c }; } }
   return null;
 }
+// 交易候選直接指向價格區段，不另外複製 K 棒
+function attachSeg(k) { const segs = PX[k.j]; if (!segs) return false; for (const g of segs) { const i = k.T - g[0]; if (i >= 0 && i < g[4].length) { k.g = g; k.b = i; return true; } } return false; }
+function segBar(k, o) { const g = k.g, i = k.b + o; if (!g || i < 0 || i >= g[4].length) return null; const c = g[4][i]; if (c == null) return null; return { o: g[1][i] ?? c, h: g[2][i] ?? c, l: g[3][i] ?? c, c }; }
 function stats(arr) {
   const n = arr.length; if (!n) return { n: 0 };
   let s = 0, up = 0, dn = 0, w = 0, l = 0, sw = 0, sl = 0;
@@ -579,9 +646,8 @@ function candidates(c) {
   }
   const res = [];
   for (const k of out) {
-    const bT = bar(k.j, k.T); if (!bT || (c.px && bT.c < c.px)) continue;
-    const hi = (k.n || 12) + 3; k.w = [];
-    for (let o = -5; o <= hi; o++) k.w.push(bar(k.j, k.T + o));
+    if (!attachSeg(k)) continue;
+    const bT = segBar(k, 0); if (!bT || (c.px && bT.c < c.px)) continue;
     res.push(k);
   }
   return res;
@@ -591,8 +657,7 @@ function sim(k, en, ex, dir, sl, tp, cost) {
   const oi = dayOff(en.d, k.n), ox = dayOff(ex.d, k.n);
   if (oi == null || ox == null) return null;
   if (ox * 2 + (ex.p === "c") <= oi * 2 + (en.p === "c")) return null;
-  const B = o => k.w[o + 5];
-  if (oi + 5 < 0 || ox + 5 >= k.w.length) return null;
+  const B = o => segBar(k, o);
   const b0 = B(oi), bx = B(ox); if (!b0 || !bx) return null;
   const E = en.p === "o" ? b0.o : b0.c; if (!(E > 0)) return null;
   const slP = sl ? (dir < 0 ? E * (1 + sl / 100) : E * (1 - sl / 100)) : null;
@@ -919,6 +984,109 @@ $("#fcCopy").onclick = () => {
   try { navigator.clipboard.writeText(txt).then(() => { msg.textContent = "已複製"; }, fallback); } catch (e) { fallback(); }
 };
 
+// ============================================================ 注意股分析
+const NT = (DATA.notices || []).map(a => { const o = {}; DATA.ntcCols.forEach((k, i) => o[k] = a[i]); return o; });
+const KALL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+$("#nK").innerHTML = KALL.map(k => `<label class="kchip"><input type="checkbox" value="${k}"><span>第${KN[k]}款</span></label>`).join("");
+for (const d of [1, 2, 3, 4, 5, 7, 10, 15, 20]) $("#nOut").add(new Option(`D${d} 收盤`, "D" + d + "c"));
+$("#nOut").value = "D3c";
+{ const s = $("#nYear"); for (let y = y0; y <= yN; y++) s.add(new Option(y + (y === y0 ? "（全部）" : ""), y)); s.value = String(Math.max(y0, 2018)); }
+function readN() {
+  return {
+    dir: +$("#nDir").value, inp: $("#nIn").value, out: $("#nOut").value, sl: +$("#nSL").value || 0, tp: +$("#nTP").value || 0, cost: +$("#nCost").value || 0,
+    ks: $$("#nK input:checked").map(e => +e.value), kmode: $("#nKMode").value, cnt: +$("#nCnt").value, tps: $("#nTp").value, ret: $("#nRet").value,
+    mkt: $("#nMkt").value, fut: $("#nFut").value, exInd: $("#nExInd").checked, px: +$("#nPx").value || 0, vol: +$("#nVol").value || 0, year: +$("#nYear").value
+  };
+}
+const kBit = k => 1 << (k - 1);
+function kMatch(km, sel, mode) {
+  if (!sel.length) return true;
+  const m = sel.reduce((a, k) => a | kBit(k), 0);
+  if (mode === "any") return (km & m) !== 0;
+  if (mode === "all") return (km & m) === m;
+  return (km & m) !== 0 && (km & ~m) === 0;
+}
+const cntBucket = c => c <= 1 ? 1 : c <= 3 ? 2 : c <= 5 ? 4 : 6;
+const kList = km => KALL.filter(k => km & kBit(k)).map(k => KN[k]).join("、");
+function ntcBase(c) {
+  const out = [];
+  for (const n of NT) {
+    if (c.exInd && n.ind) continue;
+    if (c.tps === "1" && !(n.f > 0)) continue;
+    if (c.tps === "0" && n.f > 0) continue;
+    if (c.ret === "up" && !(n.ret6 > 0)) continue;
+    if (c.ret === "dn" && !(n.ret6 < 0)) continue;
+    if (c.year && yearOf(n.t) < c.year) continue;
+    if (c.vol && (n.v == null || n.v < c.vol)) continue;
+    if (c.mkt && sMkt(n.s) !== c.mkt) continue;
+    if (c.fut !== "" && sFut(n.s) !== +c.fut) continue;
+    const k = { j: n.s, T: n.t, n: null, rg: n.t >= RI ? 1 : 0, nt: n };
+    if (!attachSeg(k)) continue;
+    const b = segBar(k, 0); if (!b || (c.px && b.c < c.px)) continue;
+    out.push(k);
+  }
+  return out;
+}
+const regOK = k => REG === "all" || (REG === "new") === !!k.rg;
+function grpRow(label, arr, extra) {
+  const all = arr.filter(regOK).map(k => k.r), s = stats(all), o = stats(arr.filter(k => !k.rg).map(k => k.r)), w = stats(arr.filter(k => k.rg).map(k => k.r));
+  const cell = x => x.n ? `<td class="n ${cls(x.mean)} sep">${fmtP(x.mean)}</td><td class="n mut">${x.n}</td>` : `<td class="n mut sep">–</td><td class="n mut">0</td>`;
+  return `<tr><td>${label}</td>${s.n ? `<td class="n">${s.n}</td><td class="n">${fmt(s.up, 1)}%</td><td class="n ${cls(s.mean)}">${fmtP(s.mean)}</td><td class="n ${cls(s.med)}">${fmtP(s.med)}</td><td class="n ${Math.abs(s.t) >= 2 ? cls(s.t) : "mut"}">${fmt(s.t)}</td>` : `<td class="n mut">0</td><td colspan="4" class="mut">–</td>`}${cell(o)}${cell(w)}${extra || ""}</tr>`;
+}
+const grpHead = (first, extraTh) => `<thead><tr><th>${first}</th><th class="n">筆數</th><th class="n">勝率</th><th class="n">平均</th><th class="n">中位數</th><th class="n">t 值</th><th class="n sep">舊制平均</th><th class="n">n</th><th class="n sep">新制平均</th><th class="n">n</th>${extraTh || ""}</tr></thead>`;
+function renderNtc() {
+  const c = readN(), en = parseCode(c.inp), ex = parseCode(c.out);
+  const msgs = [`${c.dir > 0 ? "做多" : "做空"}：${c.inp === "D1o" ? "隔天開盤" : c.inp === "Tc" ? "注意當天收盤" : "隔天收盤"}進場 → ${ex.d} 收盤出場${c.sl ? `，停損 ${c.sl}%` : ""}${c.tp ? `，停利 ${c.tp}%` : ""}；同一天停損停利都碰到算停損。`];
+  if (c.inp === "Tc") msgs.push("T 收盤進場要在盤中先判斷今天會被注意（名單收盤後才公布）。");
+  $("#nNote").textContent = msgs.join(" ");
+  const base = ntcBase(c);
+  for (const k of base) { const r = sim(k, en, ex, c.dir, c.sl, c.tp, c.cost); k.r = r ? r.r : null; k.x = r ? r.x : null; }
+  const ok = base.filter(k => k.r != null);
+  const passK = k => kMatch(k.nt.km, c.ks, c.kmode), passC = k => !c.cnt || cntBucket(k.nt.c30) === c.cnt;
+  const main = ok.filter(k => passK(k) && passC(k)).sort((a, b) => a.x - b.x);
+  const sel = main.filter(regOK), s = stats(sel.map(k => k.r));
+  const eqS = [0, 0]; for (const k of main) eqS[k.rg] += k.r;
+  const kp = (l, v) => `<div class="kpi"><span>${l}</span><b>${v}</b></div>`;
+  $("#nKpi").innerHTML = s.n ? [kp("交易數", s.n), kp("勝率", fmt(s.up, 1) + "%"), kp("平均報酬（扣成本）", `<span class="${cls(s.mean)}">${fmtP(s.mean)}</span>`), kp("中位數", `<span class="${cls(s.med)}">${fmtP(s.med)}</span>`), kp("獲利因子", fmt(s.pf)), kp("均賺 / 均賠", `${fmt(s.aw, 1)} / ${fmt(s.al, 1)}`), kp("t 值", `<span class="${Math.abs(s.t) >= 2 ? cls(s.t) : "mut"}">${fmt(s.t)}</span>`), kp("累積 舊制 / 新制", `<span class="${cls(eqS[0])}">${fmt(eqS[0], 0)}%</span> / <span class="${cls(eqS[1])}">${fmt(eqS[1], 0)}%</span>`)].join("") : kp("交易數", 0);
+  const tip = p => `<span class="num">${p.d}</span>　累積 <span class="num">${fmtP(p.y, 1)}</span><br>${esc(sId(p.k.j))} ${esc(sName(p.k.j))}　第${kList(p.k.nt.km)}款　本筆 <span class="num">${fmtP(p.k.r)}</span>`;
+  for (const [rg, box, kb] of [[0, "#nEqOld", "#nEqOldK"], [1, "#nEqNew", "#nEqNewK"]]) {
+    const rr = main.filter(k => k.rg === rg), st = stats(rr.map(k => k.r)); let cu = 0, pk = 0, dd = 0;
+    const pp = rr.map(k => { cu += k.r; pk = Math.max(pk, cu); dd = Math.min(dd, cu - pk); return { y: +cu.toFixed(2), d: D[Math.min(k.x, D.length - 1)], k }; });
+    $(kb).innerHTML = st.n ? `<span>${st.n} 筆</span><span>勝率 <b>${fmt(st.up, 1)}%</b></span><span>平均 <b class="${cls(st.mean)}">${fmtP(st.mean)}</b></span><span>t 值 <b>${fmt(st.t)}</b></span><span>累積 <b class="${cls(cu)}">${fmtP(cu, 0)}</b></span><span>最大回落 <b>${fmt(dd, 0)}%</b></span>` : "<span>沒有交易</span>";
+    lineChart($(box), pp, { tipFn: tip, aria: rg ? "新制累積報酬" : "舊制累積報酬" });
+  }
+  // 依款別
+  const okC = ok.filter(passC);
+  $("#nByK").innerHTML = grpHead("款別（含此款）", `<th class="n sep">只有此款・平均</th><th class="n">n</th>`) + "<tbody>" + KALL.map(k => {
+    const inc = okC.filter(x => x.nt.km & kBit(k)); if (!inc.length) return "";
+    const only = stats(okC.filter(x => x.nt.km === kBit(k) && regOK(x)).map(x => x.r));
+    return grpRow(`第${KN[k]}款`, inc, only.n ? `<td class="n ${cls(only.mean)} sep">${fmtP(only.mean)}</td><td class="n mut">${only.n}</td>` : `<td class="n mut sep">–</td><td class="n mut">0</td>`);
+  }).join("") + "</tbody>";
+  const okK = ok.filter(passK);
+  $("#nByC").innerHTML = grpHead("30 日內第幾次") + "<tbody>" + [[1, "第 1 次"], [2, "第 2～3 次"], [4, "第 4～5 次"], [6, "第 6 次以上"]].map(([b, l]) => grpRow(l, okK.filter(x => cntBucket(x.nt.c30) === b))).join("") + "</tbody>";
+  const okKC = ok.filter(k => passK(k) && passC(k));
+  $("#nByS").innerHTML = grpHead("狀態") + "<tbody>" + [
+    ["注意後已聽牌（差 1 次）", x => x.nt.f > 0], ["注意後未聽牌", x => !(x.nt.f > 0)],
+    ["6 日漲跌加總為正", x => x.nt.ret6 > 0], ["6 日漲跌加總為負", x => x.nt.ret6 < 0],
+    ["之後 10 天內進處置（事後）", x => x.nt.nxt > 0], ["之後 10 天內沒進處置（事後）", x => !(x.nt.nxt > 0)],
+  ].map(([l, f]) => grpRow(l, okKC.filter(f))).join("") + "</tbody>";
+  // 逐日走勢（價格本身）
+  const DAYS = 20, sums = Array(DAYS + 1).fill(0), ups = Array(DAYS + 1).fill(0), ns = Array(DAYS + 1).fill(0);
+  for (const k of sel) { const b0 = segBar(k, 0); if (!b0) continue; for (let d = 1; d <= DAYS; d++) { const b = segBar(k, d); if (!b) continue; const v = (b.c / b0.c - 1) * 100; sums[d] += v; ns[d]++; if (v > 0) ups[d]++; } }
+  const items = []; for (let d = 1; d <= DAYS; d++) if (ns[d]) items.push({ label: "D" + d, v: sums[d] / ns[d], up: ups[d] / ns[d] * 100, n: ns[d], dim: ups[d] / ns[d] < 0.5 });
+  barChart($("#nPath"), items, { base: 0, tick: t => t + "%", tipFn: d => `<b>${d.label}</b>　<span class="num">n=${d.n}</span><br>平均累積 <span class="num">${fmtP(d.v)}</span>　上漲機率 <span class="num">${fmt(d.up, 1)}%</span>`, aria: "注意後逐日平均累積漲跌" });
+  const pick = [1, 2, 3, 5, 10, 15, 20].filter(d => ns[d]);
+  $("#nPathT").innerHTML = `<thead><tr><th></th>${pick.map(d => `<th class="n">D${d}</th>`).join("")}</tr></thead><tbody><tr><td>平均累積</td>${pick.map(d => `<td class="n ${cls(sums[d])}">${fmtP(sums[d] / ns[d])}</td>`).join("")}</tr><tr><td>上漲機率</td>${pick.map(d => `<td class="n">${fmt(ups[d] / ns[d] * 100, 1)}%</td>`).join("")}</tr><tr><td>樣本</td>${pick.map(d => `<td class="n mut">${ns[d]}</td>`).join("")}</tr></tbody>`;
+  // 熱圖：款別 × 持有天數
+  const HOLD = [1, 2, 3, 5, 10, 20], hm = {}, hmN = {};
+  const pool = okC.filter(regOK);
+  for (const h of HOLD) { const exh = { d: "D" + h, p: "c" }; for (const k of pool) { const r = sim(k, en, exh, c.dir, c.sl, c.tp, c.cost); if (!r) continue; for (const kk of KALL) if (k.nt.km & kBit(kk)) { const key = kk + "|" + h; hm[key] = (hm[key] || 0) + r.r; hmN[key] = (hmN[key] || 0) + 1; } } }
+  const vals = Object.keys(hm).filter(key => hmN[key] >= 30).map(key => Math.abs(hm[key] / hmN[key])); const mx = Math.max(0.01, ...vals);
+  $("#nHmSub").textContent = `進場「${c.inp === "D1o" ? "隔天開盤" : c.inp === "Tc" ? "T 收盤" : "隔天收盤"}」、${c.dir > 0 ? "做多" : "做空"}、停損停利與成本同上；依上方分水嶺所選制度；樣本少於 30 筆不顯示`;
+  $("#nHm").innerHTML = `<thead><tr><th>款別＼持有到</th>${HOLD.map(h => `<th>D${h} 收</th>`).join("")}</tr></thead><tbody>` + KALL.filter(k => HOLD.some(h => hmN[k + "|" + h] >= 30)).map(k => `<tr><th>第${KN[k]}款</th>${HOLD.map(h => { const key = k + "|" + h, n = hmN[key]; if (!n || n < 30) return `<td class="mut">–</td>`; const v = hm[key] / n, a = Math.min(1, Math.abs(v) / mx); return `<td style="background:color-mix(in srgb, ${v >= 0 ? "var(--up)" : "var(--down)"} ${Math.round(a * 55)}%, var(--panel));color:var(--ink)" title="n=${n}">${fmtP(v)}</td>`; }).join("")}</tr>`).join("") + "</tbody>";
+}
+$$("#p-ntc select, #p-ntc input").forEach(e => e.onchange = renderNtc);
+
 // ============================================================ 規則驗證
 function renderRule() {
   const cov = { old: [0, 0], new: [0, 0] }; const byFlag = {};
@@ -935,7 +1103,7 @@ function renderRule() {
 }
 
 // ============================================================ render
-function renderTab() { if (TAB === "fc") renderFc(); else if (TAB === "day") renderDay(); else if (TAB === "bt") renderBt(); else if (TAB === "opt") renderOpt(); else renderRule(); }
+function renderTab() { if (TAB === "fc") renderFc(); else if (TAB === "day") renderDay(); else if (TAB === "ntc") renderNtc(); else if (TAB === "bt") renderBt(); else if (TAB === "opt") renderOpt(); else renderRule(); }
 function renderAll() { renderTab(); }
 $("#asof").textContent = `資料至 ${DATA.meta.last}・產生於 ${DATA.meta.generated}`;
 // 放在 GitHub Pages 時：顯示「更新資料」按鈕，連到手動執行更新的 Actions 頁面
@@ -947,9 +1115,9 @@ $("#asof").textContent = `資料至 ${DATA.meta.last}・產生於 ${DATA.meta.ge
 })();
 syncSrc();
 $$("#regime button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === REG));
-let t0 = (location.hash || "").slice(1); if (!["fc", "day", "bt", "opt", "rule"].includes(t0)) { try { t0 = localStorage.getItem("dsp_tab") || "fc"; } catch (e) { t0 = "fc"; } }
+let t0 = (location.hash || "").slice(1); if (!["fc", "day", "ntc", "bt", "opt", "rule"].includes(t0)) { try { t0 = localStorage.getItem("dsp_tab") || "fc"; } catch (e) { t0 = "fc"; } }
 applyCfg(PRESETS.d1dt);
 setTab(t0);
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(renderTab, 150); });
-})();
+}).catch(err => { const m = document.createElement("p"); m.className = "note warn"; m.textContent = "資料載入失敗：" + err.message + "（請改用最新版 Chrome / Edge / Safari）"; document.querySelector("main").prepend(m); });
 </script>

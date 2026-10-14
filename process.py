@@ -449,6 +449,36 @@ for t, j in zip(ii[order], jj[order]):
     want(s, t - SIG_PRE, t + SIG_POST)
 log("聽牌訊號", len(signals))
 
+# ---------------------------------------------------------------- 注意股事件（每檔每天一筆）
+log("整理注意股事件...")
+N_all = np.zeros((NDATE, NS), dtype=np.int8)
+for i, s_ in zip(att["_i"], att["_sid"]):
+    N_all[i, SPOS[s_]] = 1
+C30_all = rsum(N_all, 30)          # 含當天，30 個營業日內第幾次注意
+KM = {}
+for i, s_, txt in zip(att["_i"], att["_sid"], att["_txt"]):
+    if i < a0:
+        continue
+    m = 0
+    for k in kuan(txt):
+        if 1 <= k <= 15:
+            m |= 1 << (k - 1)
+    KM[(int(i), SPOS[s_])] = KM.get((int(i), SPOS[s_]), 0) | m
+notices = []
+for (t_, j), m in sorted(KM.items()):
+    if np.isnan(Cv[t_, j]):
+        continue
+    s_ = STOCKS[j]
+    nxt = -1
+    for sti, k in ev_by_stock.get(s_, []):
+        if t_ < sti <= t_ + 10:
+            nxt = int(sti - t_); break
+    notices.append([j, t_, m, int(C30_all[t_, j]), int(F1[t_, j]), int(in_disp[t_, j]),
+                    None if np.isnan(RET6[t_, j]) else round(float(RET6[t_, j]) * 100, 1),
+                    None if np.isnan(V20[t_, j]) else int(round(V20[t_, j])), nxt])
+    want(s_, t_ - 6, t_ + 23)
+log("注意股事件", len(notices))
+
 # ---------------------------------------------------------------- 事件輸出
 evo = []
 cov = {"old": [0, 0], "new": [0, 0]}
@@ -579,6 +609,8 @@ payload = dict(
     stocks=stocks_out,
     sigCols=["s", "t", "f", "r1", "ra", "c10", "c30", "ret6", "v", "ind", "first", "nxt"],
     signals=signals,
+    ntcCols=["s", "t", "km", "c30", "f", "ind", "ret6", "v", "nxt"],
+    notices=notices,
     events=evo,
     forecast=dict(t=t, rows=fc, cur=cur),
     px=px,
@@ -600,7 +632,10 @@ log("JSON 大小 %.1f MB" % (len(js.encode()) / 1e6))
 
 if os.path.exists(TEMPLATE):
     html = open(TEMPLATE, encoding="utf-8").read()
-    html = html.replace("/*__DATA__*/null", js.replace("</", "<\\/"))
+    import gzip, base64
+    gz = base64.b64encode(gzip.compress(js.encode("utf-8"), 9)).decode("ascii")
+    html = html.replace("/*__DATAGZ__*/", gz)
+    log("網頁內嵌資料（壓縮後）%.1f MB" % (len(gz) / 1e6))
     # 給 Claude 發布用（無外框）
     with open(os.path.join(OUTDIR, "artifact_body.html"), "w", encoding="utf-8") as f:
         f.write(html)
