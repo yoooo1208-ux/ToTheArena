@@ -318,7 +318,7 @@ for _, e in ev.iterrows():
         in_disp[a:b + 1, j] = True
 
 # ---------------------------------------------------------------- 聽牌狀態計算
-log("計算聽牌狀態...")
+log("計算差一次處置狀態...")
 
 
 def runs(M):
@@ -414,7 +414,7 @@ with np.errstate(divide="ignore", invalid="ignore"):
     V20 = pd.DataFrame(Vv).rolling(20, min_periods=5).mean().values / 1000.0
 
 # ---------------------------------------------------------------- 訊號
-log("整理聽牌訊號...")
+log("整理差一次處置紀錄...")
 a0 = date_to_idx(ANALYSIS_START)
 ev_by_stock = {}
 for k, e in ev.iterrows():
@@ -447,7 +447,7 @@ for t, j in zip(ii[order], jj[order]):
                     None if np.isnan(V20[t, j]) else int(round(V20[t, j])),
                     int(in_disp[t, j]), int(first), nxt])
     want(s, t - SIG_PRE, t + SIG_POST)
-log("聽牌訊號", len(signals))
+log("差一次處置紀錄", len(signals))
 
 # ---------------------------------------------------------------- 注意股事件（每檔每天一筆）
 log("整理注意股事件...")
@@ -503,7 +503,7 @@ for k, e in ev.iterrows():
                     tp=tp, why=e.why, tw=trig_txt,
                     v=None if T >= NDATE or T < 0 or np.isnan(V20[T, j]) else int(round(V20[T, j]))))
     want(e.s, e.sti - EVT_PRE, e.eni + EVT_POST)
-log("事件輸出", len(evo), "聽牌覆蓋率", cov)
+log("事件輸出", len(evo), "差一次覆蓋率", cov)
 
 # ---------------------------------------------------------------- 今日預判
 log("計算最新預判...")
