@@ -302,8 +302,6 @@ a.sidlink{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(
         <label class="f"><span>最低股價</span><input type="number" id="bPx" value="10" min="0"></label>
         <label class="f"><span>最低 20 日均量（張）</span><input type="number" id="bVol" value="300" min="0"></label>
         <label class="f"><span>起始年</span><select id="bYear"></select></label>
-        <label class="chk"><input type="checkbox" id="bExInd"> 排除 T-1 還在處置中的</label>
-        <label class="chk"><input type="checkbox" id="bFirst"> 只看連續差一次的第一天</label>
       </div>
     </details>
     <div class="presets" style="margin-top:12px">
@@ -638,40 +636,33 @@ function readBt() {
     src: $("#bSrc").value, dir: +$("#bDir").value,
     en: { d: $("#bInD").value, p: $("#bInP").value }, ex: { d: $("#bOutD").value, p: $("#bOutP").value },
     sl: +$("#bSL").value || 0, tp: +$("#bTP").value || 0, cost: +$("#bCost").value || 0,
-    ord: +$("#bEvtOrd").value, exInd: $("#bExInd").checked, firstOnly: $("#bFirst").checked, mkt: $("#bMkt").value, fut: $("#bFut").value, px: +$("#bPx").value || 0, vol: +$("#bVol").value || 0, year: +$("#bYear").value
+    ord: +$("#bEvtOrd").value, mkt: $("#bMkt").value, fut: $("#bFut").value, px: +$("#bPx").value || 0, vol: +$("#bVol").value || 0, year: +$("#bYear").value
   };
 }
-// 候選樣本：每一個「差一次處置日 T-1」的隔天都是一個觸發日 T，T 日有觸發／沒觸發都從這同一份名單切出來
-// （另外補上少數沒被判為差一次、但實際進了處置的事件，算在「有觸發」）
-let CANDS = null;
-function buildCands() {
-  if (CANDS) return CANDS;
-  const evAt = new Map(); for (const e of EV) evAt.set(e.s + "|" + (e.st - 1), e);
-  const used = new Set(), out = [];
-  for (const s of SIG) {
-    const T = s.t + 1; if (T >= D.length) continue;
-    const e = s.nxt === 2 ? evAt.get(s.s + "|" + T) : null; if (e) used.add(e);
-    out.push({ j: s.s, T, n: e ? e.n : null, hit: !!e, ord: e ? e.o : 0, ind: s.ind, v: s.v, first: s.first });
-  }
-  for (const e of EV) {
-    if (used.has(e)) continue; const T = e.st - 1; if (T < 0 || T >= D.length) continue;
-    out.push({ j: e.s, T, n: e.n, hit: true, ord: e.o, ind: 0, v: e.v, first: 1 });
-  }
-  return (CANDS = out);
-}
+// 候選樣本：{j, T(觸發日序號), n(處置天數), rg}
 function candidates(c) {
   const out = [];
-  for (const q of buildCands()) {
-    if (c.src === "evt" && !q.hit) continue;
-    if (c.src === "signo" && q.hit) continue;
-    if (c.exInd && q.ind) continue;
-    if (c.firstOnly && !q.first) continue;
-    if (!c.noGroup && c.src === "evt" && c.ord && q.ord !== c.ord) continue;
-    if (c.year && yearOf(q.T) < c.year) continue;
-    if (c.vol && (q.v == null || q.v < c.vol)) continue;
-    if (!c.noGroup && c.mkt && sMkt(q.j) !== c.mkt) continue;
-    if (!c.noGroup && c.fut !== "" && c.fut != null && sFut(q.j) !== +c.fut) continue;
-    out.push({ j: q.j, T: q.T, n: q.n, rg: q.T + 1 >= RI ? 1 : 0, hit: q.hit, ord: q.ord });
+  if (c.src === "evt") {
+    for (const e of EV) {
+      const T = e.st - 1; if (T >= D.length) continue;
+      if (!c.noGroup && c.ord && e.o !== c.ord) continue;
+      if (c.year && yearOf(e.st) < c.year) continue;
+      if (c.vol && (e.v == null || e.v < c.vol)) continue;
+      if (!c.noGroup && c.mkt && sMkt(e.s) !== c.mkt) continue;
+      if (!c.noGroup && c.fut !== "" && c.fut != null && sFut(e.s) !== +c.fut) continue;
+      out.push({ j: e.s, T, n: e.n, rg: e.st >= RI ? 1 : 0, ord: e.o });
+    }
+  } else {
+    for (const s of SIG) {
+      if (!s.first || s.ind) continue;
+      const T = s.t + 1; if (T >= D.length) continue;
+      if (c.year && yearOf(s.t) < c.year) continue;
+      if (c.vol && (s.v == null || s.v < c.vol)) continue;
+      if (!c.noGroup && c.mkt && sMkt(s.s) !== c.mkt) continue;
+      if (!c.noGroup && c.fut !== "" && c.fut != null && sFut(s.s) !== +c.fut) continue;
+      const hit = s.nxt === 2; if (c.src === "signo" && hit) continue;
+      out.push({ j: s.s, T, n: null, rg: s.t >= RI ? 1 : 0, hit, ord: 0 });
+    }
   }
   const res = [];
   for (const k of out) {
