@@ -153,11 +153,19 @@ try:
             rows.append(cells[:12])
     cols = ["商品代碼", "標的證券", "證券代號", "簡稱", "股票期貨", "股票選擇權", "週選", "上市普通股", "上櫃普通股", "上市ETF", "上櫃ETF", "股數"]
     fut = pd.DataFrame(rows, columns=cols[:len(rows[0])] if rows else cols)
+    if len(fut) < 50:
+        raise RuntimeError(f"期交所清單只抓到 {len(fut)} 筆（可能被擋），改用備用清單")
     fut.to_csv(os.path.join(OUT, "stock_futures.csv"), index=False, encoding="utf-8-sig")
     log(f"saved stock_futures.csv rows={len(fut)}")
     log(fut.head(5).to_string())
 except Exception:
     log("!! 股票期貨清單失敗\n" + traceback.format_exc()[-600:])
+    # 期交所網站常擋海外主機（例如 GitHub Actions），改用 repo 內的備用清單
+    import shutil
+    fb = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_futures_fallback.csv")
+    if os.path.exists(fb):
+        shutil.copy(fb, os.path.join(OUT, "stock_futures.csv"))
+        log("使用備用股票期貨清單 stock_futures_fallback.csv")
 
 log("DONE")
 LOG.close()

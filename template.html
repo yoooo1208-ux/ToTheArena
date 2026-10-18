@@ -812,6 +812,9 @@ function renderGroups(c) {
 // ============================================================ 最佳化
 const parseList = s => s.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean);
 let optRes = null;
+// 沒有股票期貨清單時，股期相關選項停用並說明
+if (!DATA.meta.hasFut) for (const id of ["#bFut", "#oFut"]) { const s = $(id); s.value = ""; s.disabled = true; s.title = "這次更新沒有抓到股票期貨清單"; s.options[0].text = "全部（無股期資料）"; }
+if (!DATA.meta.hasFut) for (const o of $("#oSplit").options) if (o.value.includes("fut")) o.disabled = true;
 const O_GROUPS = {
   ord: [["第一次處置", k => k.ord === 1, { ord: 1 }], ["再次處置", k => k.ord === 2, { ord: 2 }]],
   fut: [["有股期", k => sFut(k.j) === 1, { fut: "1" }], ["無股期", k => sFut(k.j) === 0, { fut: "0" }]],
