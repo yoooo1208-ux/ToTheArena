@@ -854,13 +854,21 @@ $("#oRun").onclick = () => {
 };
 function renderOpt() {
   if (!optRes) { $("#oTable").innerHTML = '<tbody><tr><td class="empty">設定好後按「開始搜尋」</td></tr></tbody>'; $("#oHm").innerHTML = ""; return; }
-  const { out, c } = optRes, m = $("#oMetric").value, key = REG, minN = +$("#oMin").value || 1;
+  const { out, c } = optRes, m = $("#oMetric").value, key = REG, minN0 = +$("#oMin").value || 1;
+  let minN = minN0;
   const val = r => {
     if (m === "sumOld" || m === "sumNew") { const s = m === "sumOld" ? r.old : r.new; return s.n && s.n >= minN ? s.sum : -Infinity; }
     const s = r[key]; if (!s.n || s.n < minN) return -Infinity; return m === "avg" ? s.mean : m === "t" ? s.t : m === "pf" ? (isFinite(s.pf) ? s.pf : 99) : s.up; };
-  const ranked = out.filter(r => isFinite(val(r))).sort((a, b) => val(b) - val(a));
+  let ranked = out.filter(r => isFinite(val(r))).sort((a, b) => val(b) - val(a));
+  // 沒有任何組合達到最少交易數：改成不設門檻照列，並標示樣本不足
+  let thin = false;
+  if (!ranked.length) { minN = 1; ranked = out.filter(r => isFinite(val(r))).sort((a, b) => val(b) - val(a)); thin = ranked.length > 0; }
+  const maxN = Math.max(0, ...out.map(r => (m === "sumOld" ? r.old : m === "sumNew" ? r.new : r[key]).n || 0));
   const fdesc = [c.src === "evt" ? "實際進處置" : "所有聽牌", c.ord ? (c.ord === 2 ? "再次處置" : "第一次處置") : "", c.mkt, c.fut === "1" ? "有股期" : c.fut === "0" ? "無股期" : ""].filter(Boolean).join("・");
-  $("#oSub").textContent = `樣本：${fdesc}。` + (c.src === "evt" ? "標「事後」的組合在 T 收盤前進場，用到收盤後才公告的處置資訊，不能直接實戰。" : "") + `共 ${out.length} 組，${ranked.length} 組達最少交易數；依「${{ all: "全部", old: "舊制", new: "新制" }[REG]}」排序。點一列可帶回策略回測`;
+  const regName = { all: "全部", old: "舊制", new: "新制" }[m === "sumOld" ? "old" : m === "sumNew" ? "new" : REG];
+  $("#oSub").innerHTML = (thin ? `<span class="chip l1">樣本不足</span> ${esc(regName)}下這個分類每組最多只有 ${maxN} 筆，沒有一組達到最少交易數 ${minN0}，下面照列但僅供參考（可把上方分水嶺切到「全部」或「舊制」看長期結果）。<br>` : "") +
+    esc(`樣本：${fdesc}。` + (c.src === "evt" ? "標「事後」的組合在 T 收盤前進場，用到收盤後才公告的處置資訊，不能直接實戰。" : "") + `共 ${out.length} 組，${thin ? 0 : ranked.length} 組達最少交易數；依「${regName}」排序。點一列可帶回策略回測`);
+  if (!ranked.length) $("#oSub").innerHTML += `<br><span class="chip l1">沒有結果</span> ${esc(regName)}下這個分類沒有任何交易，請改分水嶺或放寬篩選。`;
   const cell = s => s.n ? `<td class="n ${cls(s.mean)} sep">${fmtP(s.mean)}</td><td class="n ${cls(s.sum)}">${fmt(s.sum, 0)}%</td><td class="n mut">${s.n}</td>` : `<td class="n mut sep">–</td><td class="n mut">–</td><td class="n mut">0</td>`;
   const backCfg = (r, extra) => Object.assign({ bSrc: c.src, bEvtOrd: String(c.ord || 0), bMkt: c.mkt, bFut: c.fut, bDir: String(r.dir), bInD: r.en.d, bInP: r.en.p, bOutD: r.ex.d, bOutP: r.ex.p, bSL: r.sl, bTP: r.tp }, extra || {});
   // 分類各自的前 5 名
