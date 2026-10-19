@@ -79,6 +79,7 @@ tr.click{cursor:pointer}
 .progtxt{font:12px var(--f-num);color:var(--muted);margin-left:4px}
 .bc{font-size:13px;line-height:1.55} .bc b{font-weight:600;font-family:var(--f-num);white-space:nowrap}
 .bck{font-size:11px;color:var(--faint);margin-left:4px;white-space:normal}
+.stable{display:inline-block;font-weight:700;font-size:13px;color:#fff;background:var(--up);padding:1px 8px;border-radius:4px;letter-spacing:.02em}
 tr.gsep td{border-top:2px solid var(--line)}
 .cards3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .stat{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
@@ -1023,6 +1024,12 @@ function briefList(r, nd, lv) {
   }
   return out;
 }
+// 穩進：只看價格的處置條件，連跌停（或漲停）收盤都成立 → 明天一定進處置
+function stableOf(r, nd, lv) {
+  if (lv !== 1) return null;
+  const L = briefList(r, nd, 1).filter(x => x.vol == null && !x.maybe && x.P != null && (x.dir > 0 ? x.P <= nd.LD + 1e-9 : x.P >= nd.LU - 1e-9));
+  return L.length ? L.sort((a, b) => a.dir > 0 ? a.P - b.P : b.P - a.P)[0] : null;
+}
 function briefText(x) {
   const px = x.P != null ? `收盤 ${x.dir > 0 ? "≥" : "≤"} ${fmt(x.P)}` : "";
   const vol = x.vol != null ? `成交量 ≥ ${x.vol.toLocaleString()} 張` : "";
@@ -1030,6 +1037,8 @@ function briefText(x) {
 }
 function briefHtml(r, nd, lv) {
   const L = briefList(r, nd, lv);
+  const st = stableOf(r, nd, lv);
+  if (st) return `<div class="bc"><span class="stable">穩進!!</span> <b class="${st.dir > 0 ? "up" : "down"}">（收盤 ${st.dir > 0 ? "≥" : "≤"} ${fmt(st.P)}）</b></div><div class="bck" style="margin-left:0">${st.dir > 0 ? `明天跌停 ${fmt(nd.LD)}` : `明天漲停 ${fmt(nd.LU)}`} 也符合${st.ks.map(k => "第" + KN[k] + "款").join("、")}，一定進處置</div>`;
   if (!L.length) {
     const any = nd.C.some(c => c.ok);
     return `<span class="mut">${lv === 1 ? (any ? "明天不會處置（只會被注意）" : "明天不會處置") : "明天漲跌停都不會被注意"}</span>`;
@@ -1097,7 +1106,7 @@ function renderFc() {
   const pAny = tenpaiProb("any"), pC1 = tenpaiProb("c1");
   const curEv = F.cur.map(k => EV[k]);
   $("#fcStats").innerHTML = [
-    [rows1.length, "差 1 次就處置", "l1"], [rows2.length, "差 2 次處置", "l2"], [curEv.length, "處置中／即將處置", "l3"]
+    [rows1.filter(r => stableOf(r, nextDayConds(r), 1)).length, "穩進!!（跌停也會進）", "l1"], [rows1.length, "差 1 次就處置", "l1"], [rows2.length, "差 2 次處置", "l2"], [curEv.length, "處置中／即將處置", "l3"]
   ].map(([v, l, c]) => `<div class="stat"><span><span class="chip ${c}">${l}</span></span><b class="num">${v}</b><span>資料日 ${D[t]}，適用 ${dateAt(t + 1)} 交易日</span></div>`).join("");
   const hdr = `<thead><tr><th></th><th>代號</th><th>名稱</th><th>市場</th><th class="n">收盤</th><th class="n">6日加總</th><th>處置路徑</th><th>若處置</th><th>明天觸發條件（任一成立）</th>${lag ? `<th class="n">${D[t + 1].slice(5)} 實際收盤</th>` : ""}<th class="n">歷史進處置率</th></tr></thead>`;
   const row = (r, lv) => {
@@ -1109,14 +1118,15 @@ function renderFc() {
     return `<tr class="click" data-k="${key}"><td class="mut">${open ? "▾" : "▸"}</td><td class="num">${esc(sId(r.s))}</td><td>${esc(sName(r.s))}${sFut(r.s) ? ' <span class="chip l3">股期</span>' : ""}${r.ind ? ' <span class="chip l3">處置中</span>' : ""}</td><td>${nd.mk}</td><td class="n">${fmt(r.cl)}</td><td class="n ${cls(r.s6)}">${fmtP(r.s6)}</td><td style="white-space:normal;min-width:150px">${path}</td><td>${ordChip(nextOrd(r, lv))}</td><td style="white-space:normal;min-width:240px">${briefHtml(r, nd, lv)}</td>${lag ? `<td class="n">${actualCell(r, nd, lv)}</td>` : ""}<td class="n">${lv === 1 && pr ? fmt(pr.p, 1) + "%" : "–"}</td></tr>` +
       (open ? `<tr class="detail"><td colspan="${lag ? 11 : 10}">${fcDetail(r, nd, lv)}</td></tr>` : "");
   };
-  const sortFn = (a, b) => (b.f1 & 14) - (a.f1 & 14) || (b.s6 || 0) - (a.s6 || 0);
+  const stab = r => stableOf(r, nextDayConds(r), 1) ? 1 : 0;
+  const sortFn = (a, b) => stab(b) - stab(a) || (b.f1 & 14) - (a.f1 & 14) || (b.s6 || 0) - (a.s6 || 0);
   $("#fc1").innerHTML = rows1.length ? hdr + "<tbody>" + rows1.sort(sortFn).map(r => row(r, 1)).join("") + "</tbody>" : '<tbody><tr><td class="empty">目前沒有差 1 次的股票</td></tr></tbody>';
   $("#fc2").innerHTML = rows2.length ? hdr + "<tbody>" + rows2.sort((a, b) => (b.s6 || 0) - (a.s6 || 0)).map(r => row(r, 2)).join("") + "</tbody>" : '<tbody><tr><td class="empty">目前沒有差 2 次的股票</td></tr></tbody>';
   $$("#fc1 tr.click, #fc2 tr.click").forEach(tr => tr.onclick = () => { const k = tr.dataset.k; fcOpen.has(k) ? fcOpen.delete(k) : fcOpen.add(k); renderFc(); });
   $("#fc1sub").textContent = pAny ? `歷史隔日觸發率：任一注意即處置型 ${fmt(pAny.p, 1)}%（n=${pAny.n}）、第1款型 ${pC1 ? fmt(pC1.p, 1) + "%" : "–"}` : "";
   // LINE 轉貼文字
   const lines = [`明日處置預判（資料日 ${D[t]}，適用 ${dateAt(t + 1).replace("＊", "")}）`, `【差1次就處置】${rows1.length} 檔`];
-  for (const r of rows1) { const nd = nextDayConds(r); const L = briefList(r, nd, 1); lines.push(`${sName(r.s)}(${sId(r.s)}) ${nd.mk} 收${fmt(r.cl)}｜${L.length ? L.map(x => briefText(x) + (x.maybe ? "(可能)" : "")).join(" 或 ") : "明天不會處置"}｜最快 ${dateAt(t + 2).replace("＊", "")} ${nextOrd(r, 1).o === 2 ? "再次" : "第一次"}處置`); }
+  for (const r of rows1) { const nd = nextDayConds(r); const L = briefList(r, nd, 1), st = stableOf(r, nd, 1); lines.push(`${sName(r.s)}(${sId(r.s)}) ${nd.mk} 收${fmt(r.cl)}｜${st ? `穩進!!(收盤${st.dir > 0 ? "≥" : "≤"}${fmt(st.P)}，${st.dir > 0 ? "跌停" : "漲停"}也進)` : L.length ? L.map(x => briefText(x) + (x.maybe ? "(可能)" : "")).join(" 或 ") : "明天不會處置"}｜最快 ${dateAt(t + 2).replace("＊", "")} ${nextOrd(r, 1).o === 2 ? "再次" : "第一次"}處置`); }
   lines.push(`【差2次】${rows2.length} 檔`); for (const r of rows2) lines.push(`${sName(r.s)}(${sId(r.s)}) ${flagNames(r.f2)}｜若處置為${nextOrd(r, 2).o === 2 ? "再次" : "第一次"}處置`);
   $("#fcCopyBox").value = lines.join("\n");
   // 處置中
