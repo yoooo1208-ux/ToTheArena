@@ -316,11 +316,20 @@ a.sidlink{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(
       </div>
     </details>
     <div class="presets" style="margin-top:12px">
+      <span class="mut" style="font-size:12px;align-self:center">做空：</span>
       <button class="btn" data-preset="d1dt">D1 開→D1 收 空（處置首日當沖）</button>
       <button class="btn" data-preset="tc_d1c">T 收→D1 收 空</button>
       <button class="btn" data-preset="tc_d2c">T 收→D2 收 空</button>
       <button class="btn" data-preset="t1c_tc">T-1 收→T 收 空（聽牌日收盤空）</button>
       <button class="btn" data-preset="sigdt">所有聽牌：T 開→T 收 空</button>
+    </div>
+    <div class="presets" style="margin-top:8px">
+      <span class="mut" style="font-size:12px;align-self:center">做多：</span>
+      <button class="btn" data-preset="l_d2c_x1o" title="格點搜尋中平均報酬最高的做多組合之一（樣本內、樣本外、新制皆為正）；不設停損停利表現最好">D2 收→X1 開 多（處置第 2 天買、出關開盤賣）</button>
+      <button class="btn" data-preset="l_d1c_x1o" title="格點搜尋中平均報酬最高的做多組合之一（樣本內、樣本外、新制皆為正）；不設停損停利表現最好">D1 收→X1 開 多（處置首日收盤買）</button>
+      <button class="btn" data-preset="l_d1c_dlc" title="格點搜尋中平均報酬最高的做多組合之一（樣本內、樣本外、新制皆為正）；不設停損停利表現最好">D1 收→DL 收 多（抱到處置最後一天）</button>
+      <button class="btn" data-preset="l_d1c_x5c" title="格點搜尋中平均報酬最高的做多組合之一（樣本內、樣本外、新制皆為正）；不設停損停利表現最好">D1 收→X5 收 多（出關後再抱 5 天）</button>
+      <button class="btn" data-preset="l_sig_d10" title="格點搜尋中平均報酬最高的做多組合之一（樣本內、樣本外、新制皆為正）；不設停損停利表現最好">所有聽牌：D1 收→D10 收 多</button>
     </div>
     <p class="note" id="btNote" style="margin-top:12px"></p>
   </div>
@@ -364,7 +373,7 @@ a.sidlink{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(
       <label class="f"><span>最少交易數</span><input type="number" id="oMin" value="30" min="1"></label>
       <button class="btn primary" id="oRun">開始搜尋</button>
     </div>
-    <p class="mut" style="font-size:12px;margin:8px 0 0">寫法：日期代碼＋o（開盤）或 c（收盤）。日期代碼：T-5～T-1、T、D1～D12、DL（處置最後一天）、X1～X3（出關後第幾天）。例：T-1c＝聽牌日收盤，D1o＝處置第一天開盤。</p>
+    <p class="mut" style="font-size:12px;margin:8px 0 0">寫法：日期代碼＋o（開盤）或 c（收盤）。日期代碼：T-5～T-1、T、D1～D12、DL（處置最後一天）、X1～X5（出關後第幾天）。例：T-1c＝聽牌日收盤，D1o＝處置第一天開盤。</p>
     <div class="progress" style="margin-top:10px"><i id="oProg"></i></div>
   </div>
   <div class="panel" id="oGrpPanel" hidden><h2>分類比較 <small>每一類各自的前 5 名，看最佳參數在不同分類是否一致；點一列帶回策略回測</small></h2><div class="tw"><table id="oGrp"></table></div></div>
@@ -633,7 +642,7 @@ function renderDay() {
 ["#dMetric", "#dAlign", "#dOrd", "#dMkt", "#dLen", "#dYear"].forEach(s => $(s).onchange = renderDay);
 
 // ============================================================ 回測引擎（T / D1 / D2 …）
-const DAYCODES = ["T-5", "T-4", "T-3", "T-2", "T-1", "T"].concat(Array.from({ length: 12 }, (_, i) => "D" + (i + 1)), ["DL", "X1", "X2", "X3"]);
+const DAYCODES = ["T-5", "T-4", "T-3", "T-2", "T-1", "T"].concat(Array.from({ length: 12 }, (_, i) => "D" + (i + 1)), ["DL", "X1", "X2", "X3", "X4", "X5"]);
 const DAYNAME = { "T-1": "T-1 聽牌日", "T": "T 觸發日", "D1": "D1 處置第1天", "DL": "DL 處置最後一天", "X1": "X1 出關第1天", "X2": "X2 出關第2天", "X3": "X3 出關第3天" };
 const dayLabel = c => DAYNAME[c] || c;
 for (const id of ["#bInD", "#bOutD"]) { const s = $(id); for (const c of DAYCODES) s.add(new Option(dayLabel(c), c)); }
@@ -758,6 +767,12 @@ const PRESETS = {
   tc_d2c: { bSrc: "evt", bInD: "T", bInP: "c", bOutD: "D2", bOutP: "c", bDir: "-1", bSL: 0, bTP: 0, bCost: 0.4 },
   t1c_tc: { bSrc: "sig", bInD: "T-1", bInP: "c", bOutD: "T", bOutP: "c", bDir: "-1", bSL: 0, bTP: 0, bCost: 0.4 },
   sigdt: { bSrc: "sig", bInD: "T", bInP: "o", bOutD: "T", bOutP: "c", bDir: "-1", bSL: 0, bTP: 0, bCost: 0.3 },
+  // 做多（格點搜尋：每組進出場取平均報酬最高的停損停利，且樣本內、樣本外、新制皆為正）
+  l_d2c_x1o: { bSrc: "evt", bInD: "D2", bInP: "c", bOutD: "X1", bOutP: "o", bDir: "1", bSL: 0, bTP: 0, bCost: 0.45 },
+  l_d1c_x1o: { bSrc: "evt", bInD: "D1", bInP: "c", bOutD: "X1", bOutP: "o", bDir: "1", bSL: 0, bTP: 0, bCost: 0.45 },
+  l_d1c_dlc: { bSrc: "evt", bInD: "D1", bInP: "c", bOutD: "DL", bOutP: "c", bDir: "1", bSL: 0, bTP: 0, bCost: 0.45 },
+  l_d1c_x5c: { bSrc: "evt", bInD: "D1", bInP: "c", bOutD: "X5", bOutP: "c", bDir: "1", bSL: 0, bTP: 0, bCost: 0.45 },
+  l_sig_d10: { bSrc: "sig", bInD: "D1", bInP: "c", bOutD: "D10", bOutP: "c", bDir: "1", bSL: 0, bTP: 0, bCost: 0.45 },
 };
 function applyCfg(p) { for (const k in p) { const e = $("#" + k); if (e) e.value = p[k]; } syncSrc(); renderBt(); }
 $$("[data-preset]").forEach(b => b.onclick = () => applyCfg(PRESETS[b.dataset.preset]));
