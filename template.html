@@ -335,6 +335,7 @@ a.sidlink{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(
     <div class="panel"><h2>出場原因</h2><div class="tw"><table id="bExitT"></table></div></div>
   </div>
   <div class="panel"><h2>逐年</h2><div class="tw"><table id="bYearT"></table></div></div>
+  <div class="panel"><h2>持倉中與待進場 <small id="bLiveSub">依目前的進出場設定，出場日還沒到的交易；損益以最新收盤計算（已扣成本）</small></h2><div class="kpis" id="bLiveKpi" style="margin:4px 0 10px"></div><div class="tw" style="max-height:460px;overflow:auto"><table id="bLive"></table></div></div>
   <div class="panel"><h2>交易明細 <small>最近 150 筆</small></h2><div class="tw" style="max-height:460px;overflow:auto"><table id="bTrades"></table></div></div>
 </section>
 
@@ -693,12 +694,17 @@ function candidates(c) {
 }
 // 單筆模擬：停損停利用每日高低價判斷，同一天兩邊都碰到算停損；跳空越過時用開盤價
 // rf：進場當天漲跌幅篩選 {lo, hi}（%）。收盤進場＝當天收盤漲跌；開盤進場＝開盤跳空。都是相對前一天收盤
-function sim(k, en, ex, dir, sl, tp, cost, rf) {
+function sim(k, en, ex, dir, sl, tp, cost, rf, live) {
   const oi = dayOff(en.d, k.n), ox = dayOff(ex.d, k.n);
   if (oi == null || ox == null) return null;
   if (ox * 2 + (ex.p === "c") <= oi * 2 + (en.p === "c")) return null;
   const B = o => segBar(k, o);
-  const b0 = B(oi), bx = B(ox); if (!b0 || !bx) return null;
+  const LASTI = D.length - 1;
+  const b0 = B(oi), bx = B(ox);
+  // live：回測頁用，回傳「待進場」與「持倉中」（出場日還沒到）
+  if (!b0) return live && k.T + oi > LASTI ? { wait: true, ei: k.T + oi, x: k.T + ox } : null;
+  const pending = !bx && k.T + ox > LASTI;
+  if (!bx && !(live && pending)) return null;
   const E = en.p === "o" ? b0.o : b0.c; if (!(E > 0)) return null;
   const bp = B(oi - 1), ef = bp && bp.c > 0 ? (E / bp.c - 1) * 100 : null;
   if (rf && (rf.lo != null || rf.hi != null)) {
@@ -724,8 +730,13 @@ function sim(k, en, ex, dir, sl, tp, cost, rf) {
     if (tpP && hitTP(fav(b))) { X = tpP; why = "停利"; xo = o; break; }
     if (last) X = b.c;
   }
-  if (X == null) return null;
-  return { r: dir * (X / E - 1) * 100 - cost, x: k.T + xo, why, E, X, ef };
+  if (X == null) {
+    if (!(live && pending)) return null;
+    let lo = Math.min(ox, LASTI - k.T), bl = null; while (lo >= oi && !(bl = B(lo))) lo--;
+    if (!bl) return null;
+    return { open: true, r: dir * (bl.c / E - 1) * 100 - cost, x: k.T + ox, li: k.T + lo, why: "持倉中", E, X: bl.c, ef, ei: k.T + oi, slP, tpP };
+  }
+  return { r: dir * (X / E - 1) * 100 - cost, x: k.T + xo, why, E, X, ef, ei: k.T + oi };
 }
 // 讀取「進場當天漲跌幅」區間輸入；空白＝不限
 function readRf(lo, hi) {
@@ -787,9 +798,28 @@ function btNote(c) {
   if (c.dir < 0) msgs.push("做空需有券源；再次處置須預收款券。");
   return msgs.join(" ");
 }
+function renderLive(c, live) {
+  const L = D.length - 1;
+  const hold = live.filter(r => r.open).sort((a, b) => a.x - b.x), wait = live.filter(r => r.wait).sort((a, b) => a.ei - b.ei);
+  const st = stats(hold.map(r => r.r));
+  $("#bLiveKpi").innerHTML = [["持倉中", hold.length + " 檔"], ["未實現平均", st.n ? fmtP(st.mean) : "–", st.n ? cls(st.mean) : ""], ["賺／賠", st.n ? `${hold.filter(r => r.r > 0).length}／${hold.filter(r => r.r <= 0).length}` : "–"], ["合計（每檔等額）", st.n ? fmtP(st.sum, 1) : "–", st.n ? cls(st.sum) : ""], ["待進場", wait.length + " 檔"]]
+    .map(([l, v, k]) => `<div class="kpi"><span>${l}</span><b class="${k || ""}">${v}</b></div>`).join("");
+  const dirTxt = c.dir < 0 ? "空" : "多";
+  const row = r => {
+    const left = Math.max(0, r.x - L);
+    const stops = [r.slP ? `停損 ${fmt(r.slP)}` : "", r.tpP ? `停利 ${fmt(r.tpP)}` : ""].filter(Boolean).join("　");
+    return `<tr><td><span class="chip ${r.open ? "l1" : "l3"}">${r.open ? "持倉中" : "待進場"}</span></td><td class="num">${esc(sId(r.c.j))}</td><td>${esc(sName(r.c.j))}${sFut(r.c.j) ? ' <span class="chip l3">股期</span>' : ""}</td><td class="num">${dateAt(r.c.T)}</td><td class="num">${dateAt(r.ei)}</td>` +
+      (r.open ? `<td class="n">${fmt(r.E)}</td><td class="n">${fmt(r.X)}<br><span class="mut" style="font-size:11px">${D[r.li].slice(5)}</span></td><td class="n ${cls(r.r)}"><b>${fmtP(r.r)}</b></td>` : `<td class="n mut">–</td><td class="n mut">–</td><td class="n mut">–</td>`) +
+      `<td class="num">${dateAt(r.x)}</td><td class="n">${r.open ? `還有 ${left} 天` : `${Math.max(0, r.ei - L)} 天後進場`}</td><td class="mut" style="font-size:12px">${stops || "–"}</td></tr>`;
+  };
+  $("#bLive").innerHTML = hold.length || wait.length ? `<thead><tr><th>狀態</th><th>代號</th><th>名稱</th><th>T 日</th><th>進場日</th><th class="n">進場價</th><th class="n">最新收盤</th><th class="n">未實現（${dirTxt}）</th><th>預計出場日</th><th class="n">剩餘</th><th>停損／停利價</th></tr></thead><tbody>` + hold.map(row).join("") + wait.map(row).join("") + "</tbody>"
+    : `<tbody><tr><td class="empty">目前沒有持倉中或待進場的交易（${esc(codeName(c.en))} → ${esc(codeName(c.ex))}）</td></tr></tbody>`;
+  $("#bLiveSub").textContent = `${codeName(c.en)} 進場 → ${codeName(c.ex)} 出場，資料到 ${D[L]}；出場日標＊為推估的未來交易日。損益以最新收盤計算（已扣成本），不受分水嶺切換影響`;
+}
 function renderBt() {
   const c = readBt(); $("#btNote").textContent = btNote(c) + (rfText(c.rf) ? `　篩選：${rfText(c.rf)}（${c.en.p === "o" ? "開盤跳空" : "當天收盤漲跌"}）。` : ""); renderTL(c);
-  const resAll = []; for (const k of candidates(c)) { const r = sim(k, c.en, c.ex, c.dir, c.sl, c.tp, c.cost, c.rf); if (r) resAll.push(Object.assign(r, { c: k })); }
+  const resAll = [], live = []; for (const k of candidates(c)) { const r = sim(k, c.en, c.ex, c.dir, c.sl, c.tp, c.cost, c.rf, true); if (!r) continue; Object.assign(r, { c: k }); (r.open || r.wait ? live : resAll).push(r); }
+  renderLive(c, live);
   resAll.sort((a, b) => a.x - b.x);
   const res = resAll.filter(r => REG === "all" || (REG === "new") === !!r.c.rg);
   const eqSum = [0, 0]; for (const r of resAll) eqSum[r.c.rg ? 1 : 0] += r.r;
