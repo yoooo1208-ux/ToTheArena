@@ -43,6 +43,23 @@ jobs:
           rm -f site/artifact_body.html
           touch site/.nojekyll
 
+      - name: 資料日期檢查
+        run: |
+          python - <<'EOF'
+          import json, pandas as pd
+          d = json.load(open("site/disposal_data.json", encoding="utf-8"))
+          m, D = d["meta"], d["dates"]
+          ev = d["events"]; cols = d.get("evCols")
+          st = [e["st"] if isinstance(e, dict) else e[cols.index("st")] for e in ev]
+          last_ev = D[min(max(st), len(D) - 1)] if st else "-"
+          n_recent = sum(1 for x in st if x >= len(D) - 10)
+          di = pd.read_csv("finlab_export/disposal_information.csv.gz", usecols=["date"])
+          ta = pd.read_csv("finlab_export/trading_attention.csv.gz", usecols=["date"])
+          msg = (f"價格到 {m['priceLast']}｜注意股到 {m['attLast']}｜處置公告(原始)到 {di['date'].max()}｜"
+                 f"注意股(原始)到 {ta['date'].max()}｜處置事件 {len(ev)} 筆，最後開始日 {last_ev}，近10日 {n_recent} 筆")
+          print("::notice title=資料日期::" + msg)
+          EOF
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
