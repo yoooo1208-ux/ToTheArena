@@ -303,6 +303,7 @@ a.sidlink{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(
       <label class="f"><span>處置次數</span><select id="bEvtOrd"><option value="0">全部</option><option value="1">第一次處置</option><option value="2">再次處置</option></select></label>
       <label class="f"><span>市場</span><select id="bMkt"><option value="">全部</option><option>上市</option><option>上櫃</option></select></label>
       <label class="f"><span>股票期貨</span><select id="bFut"><option value="">全部</option><option value="1">有股期</option><option value="0">無股期</option></select></label>
+      <label class="f"><span>最低 20 日均成交金額（億）</span><input type="number" id="bAmt" step="0.5" min="0" placeholder="不限" style="width:100px" title="觸發日的 20 日平均成交量 × 收盤價。回測：做多時 ≥ 5 億勝率與獲利因子明顯較高"></label>
       <label class="f"><span>進場當天漲跌幅</span><select id="bRfP"><option value="">不限</option><option value="noLU">排除漲停（≤ 9.4%）</option><option value="noExt">排除大跌與漲停（-7% ～ 9.4%）</option><option value="noGapDn">排除大跌（≥ -7%）</option><option value="onlyLU">只看漲停（≥ 9.4%）</option><option value="up">只看上漲（≥ 0%）</option><option value="dn">只看下跌（≤ 0%）</option><option value="custom">自訂</option></select></label>
       <label class="f"><span>從 %</span><input type="number" id="bRfLo" step="0.5" placeholder="不限" style="width:80px"></label>
       <label class="f"><span>到 %</span><input type="number" id="bRfHi" step="0.5" placeholder="不限" style="width:80px"></label>
@@ -352,7 +353,7 @@ a.sidlink{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(
 <section class="page" id="p-opt" hidden>
   <div class="panel">
     <h2>參數格點搜尋</h2>
-    <p class="lead">樣本與分類在這裡直接選；成本、最低股價、均量、起始年沿用「策略回測」。把下面每個進場 × 出場 × 停損 × 停利組合都跑一次，排序依上方分水嶺所選制度，表格同時列出舊制與新制。</p>
+    <p class="lead">樣本與分類在這裡直接選；成本、最低股價、均量、成交金額、起始年沿用「策略回測」。把下面每個進場 × 出場 × 停損 × 停利組合都跑一次，排序依上方分水嶺所選制度，表格同時列出舊制與新制。</p>
     <div class="filters" style="margin-top:12px">
       <label class="f"><span>樣本</span><select id="oSrc"><option value="evt">實際進處置</option><option value="sig">所有聽牌（不論有無進處置）</option></select></label>
       <label class="f"><span>處置次數</span><select id="oOrd"><option value="0">全部</option><option value="1">第一次處置</option><option value="2">再次處置</option></select></label>
@@ -662,7 +663,7 @@ function readBt() {
     src: $("#bSrc").value, dir: +$("#bDir").value,
     en: { d: $("#bInD").value, p: $("#bInP").value }, ex: { d: $("#bOutD").value, p: $("#bOutP").value },
     sl: +$("#bSL").value || 0, tp: +$("#bTP").value || 0, cost: +$("#bCost").value || 0,
-    ord: +$("#bEvtOrd").value, mkt: $("#bMkt").value, fut: $("#bFut").value, rf: readRf("#bRfLo", "#bRfHi"), px: +$("#bPx").value || 0, vol: +$("#bVol").value || 0, year: +$("#bYear").value
+    ord: +$("#bEvtOrd").value, mkt: $("#bMkt").value, fut: $("#bFut").value, rf: readRf("#bRfLo", "#bRfHi"), amt: +$("#bAmt").value || 0, px: +$("#bPx").value || 0, vol: +$("#bVol").value || 0, year: +$("#bYear").value
   };
 }
 // 每檔股票的處置觸發日（處置開始前一天）
@@ -678,7 +679,7 @@ function candidates(c) {
       if (c.vol && (e.v == null || e.v < c.vol)) continue;
       if (!c.noGroup && c.mkt && sMkt(e.s) !== c.mkt) continue;
       if (!c.noGroup && c.fut !== "" && c.fut != null && sFut(e.s) !== +c.fut) continue;
-      out.push({ j: e.s, T, n: e.n, rg: e.st >= RI ? 1 : 0, ord: e.o });
+      out.push({ j: e.s, T, n: e.n, rg: e.st >= RI ? 1 : 0, ord: e.o, v: e.v });
     }
   } else {
     for (const s of SIG) {
@@ -690,13 +691,14 @@ function candidates(c) {
       if (c.vol && (s.v == null || s.v < c.vol)) continue;
       if (!c.noGroup && c.mkt && sMkt(s.s) !== c.mkt) continue;
       if (!c.noGroup && c.fut !== "" && c.fut != null && sFut(s.s) !== +c.fut) continue;
-      out.push({ j: s.s, T, n: null, rg: s.t >= RI ? 1 : 0, hit: s.nxt === 2, ord });
+      out.push({ j: s.s, T, n: null, rg: s.t >= RI ? 1 : 0, hit: s.nxt === 2, ord, v: s.v });
     }
   }
   const res = [];
   for (const k of out) {
     if (!attachSeg(k)) continue;
     const bT = segBar(k, 0); if (!bT || (c.px && bT.c < c.px)) continue;
+    if (c.amt && !(k.v != null && k.v * bT.c / 1e5 >= c.amt)) continue;  // 20 日均量（張）× 收盤價 → 億元
     res.push(k);
   }
   return res;
@@ -832,7 +834,7 @@ function renderLive(c, live) {
   $("#bLiveSub").textContent = `${codeName(c.en)} 進場 → ${codeName(c.ex)} 出場，資料到 ${D[L]}；出場日標＊為推估的未來交易日。損益以最新收盤計算（已扣成本），不受分水嶺切換影響`;
 }
 function renderBt() {
-  const c = readBt(); $("#btNote").textContent = btNote(c) + (rfText(c.rf) ? `　篩選：${rfText(c.rf)}（${c.en.p === "o" ? "開盤跳空" : "當天收盤漲跌"}）。` : ""); renderTL(c);
+  const c = readBt(); $("#btNote").textContent = btNote(c) + (c.amt ? `　只看 20 日均成交金額 ≥ ${c.amt} 億。` : "") + (rfText(c.rf) ? `　篩選：${rfText(c.rf)}（${c.en.p === "o" ? "開盤跳空" : "當天收盤漲跌"}）。` : ""); renderTL(c);
   const resAll = [], live = []; for (const k of candidates(c)) { const r = sim(k, c.en, c.ex, c.dir, c.sl, c.tp, c.cost, c.rf, true); if (!r) continue; Object.assign(r, { c: k }); (r.open || r.wait ? live : resAll).push(r); }
   renderLive(c, live);
   resAll.sort((a, b) => a.x - b.x);
@@ -941,7 +943,7 @@ function renderOpt() {
   let thin = false;
   if (!ranked.length) { minN = 1; ranked = out.filter(r => isFinite(val(r))).sort((a, b) => val(b) - val(a)); thin = ranked.length > 0; }
   const maxN = Math.max(0, ...out.map(r => (m === "sumOld" ? r.old : m === "sumNew" ? r.new : r[key]).n || 0));
-  const fdesc = [c.src === "evt" ? "實際進處置" : "所有聽牌", c.ord ? (c.ord === 2 ? "再次處置" : "第一次處置") : "", c.mkt, c.fut === "1" ? "有股期" : c.fut === "0" ? "無股期" : "", rfText(c.rf)].filter(Boolean).join("・");
+  const fdesc = [c.src === "evt" ? "實際進處置" : "所有聽牌", c.ord ? (c.ord === 2 ? "再次處置" : "第一次處置") : "", c.mkt, c.fut === "1" ? "有股期" : c.fut === "0" ? "無股期" : "", c.amt ? `成交金額 ≥ ${c.amt} 億` : "", rfText(c.rf)].filter(Boolean).join("・");
   const regName = { all: "全部", old: "舊制", new: "新制" }[m === "sumOld" ? "old" : m === "sumNew" ? "new" : REG];
   $("#oSub").innerHTML = (thin ? `<span class="chip l1">樣本不足</span> ${esc(regName)}下這個分類每組最多只有 ${maxN} 筆，沒有一組達到最少交易數 ${minN0}，下面照列但僅供參考（可把上方分水嶺切到「全部」或「舊制」看長期結果）。<br>` : "") +
     esc(`樣本：${fdesc}。` + (c.src === "evt" ? "標「事後」的組合在 T 收盤前進場，用到收盤後才公告的處置資訊，不能直接實戰。" : "") + `共 ${out.length} 組，${thin ? 0 : ranked.length} 組達最少交易數；依「${regName}」排序。點一列可帶回策略回測`);
