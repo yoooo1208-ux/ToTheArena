@@ -300,6 +300,7 @@ a.sidlink{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(
     </div>
     <div class="tl" id="btTL" aria-label="時間軸"></div>
     <div class="filters" style="margin-top:12px">
+      <label class="f"><span>進處置原因</span><select id="bCause"><option value="">全部</option><option value="UP">漲幅進（第一款漲）</option><option value="DN">跌幅進（第一款跌）</option><option value="OTH">非價格（量、週轉率等）</option></select></label>
       <label class="f"><span>處置次數</span><select id="bEvtOrd"><option value="0">全部</option><option value="1">第一次處置</option><option value="2">再次處置</option></select></label>
       <label class="f"><span>市場</span><select id="bMkt"><option value="">全部</option><option>上市</option><option>上櫃</option></select></label>
       <label class="f"><span>股票期貨</span><select id="bFut"><option value="">全部</option><option value="1">有股期</option><option value="0">無股期</option></select></label>
@@ -356,13 +357,14 @@ a.sidlink{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(
     <p class="lead">樣本與分類在這裡直接選；成本、最低股價、均量、成交金額、起始年沿用「策略回測」。把下面每個進場 × 出場 × 停損 × 停利組合都跑一次，排序依上方分水嶺所選制度，表格同時列出舊制與新制。</p>
     <div class="filters" style="margin-top:12px">
       <label class="f"><span>樣本</span><select id="oSrc"><option value="evt">實際進處置</option><option value="sig">所有聽牌（不論有無進處置）</option></select></label>
+      <label class="f"><span>進處置原因</span><select id="oCause"><option value="">全部</option><option value="UP">漲幅進（第一款漲）</option><option value="DN">跌幅進（第一款跌）</option><option value="OTH">非價格（量、週轉率等）</option></select></label>
       <label class="f"><span>處置次數</span><select id="oOrd"><option value="0">全部</option><option value="1">第一次處置</option><option value="2">再次處置</option></select></label>
       <label class="f"><span>市場</span><select id="oMkt"><option value="">全部</option><option>上市</option><option>上櫃</option></select></label>
       <label class="f"><span>股票期貨</span><select id="oFut"><option value="">全部</option><option value="1">有股期</option><option value="0">無股期</option></select></label>
       <label class="f"><span>進場當天漲跌幅</span><select id="oRfP"><option value="">不限</option><option value="noLU">排除漲停（≤ 9.4%）</option><option value="noExt">排除大跌與漲停（-7% ～ 9.4%）</option><option value="noGapDn">排除大跌（≥ -7%）</option><option value="onlyLU">只看漲停（≥ 9.4%）</option><option value="up">只看上漲（≥ 0%）</option><option value="dn">只看下跌（≤ 0%）</option><option value="custom">自訂</option></select></label>
       <label class="f"><span>從 %</span><input type="number" id="oRfLo" step="0.5" placeholder="不限" style="width:80px"></label>
       <label class="f"><span>到 %</span><input type="number" id="oRfHi" step="0.5" placeholder="不限" style="width:80px"></label>
-      <label class="f"><span>分類比較</span><select id="oSplit"><option value="">不拆</option><option value="ord">依處置次數各跑一次</option><option value="fut">依有無股期各跑一次</option><option value="ordfut">處置次數 × 股期（4 類）</option></select></label>
+      <label class="f"><span>分類比較</span><select id="oSplit"><option value="">不拆</option><option value="ord">依處置次數各跑一次</option><option value="cause">依進處置原因（漲幅／跌幅／非價格）</option><option value="causeord">進處置原因 × 處置次數（6 類）</option><option value="fut">依有無股期各跑一次</option><option value="ordfut">處置次數 × 股期（4 類）</option></select></label>
     </div>
     <div class="filters" style="margin-top:12px">
       <label class="f"><span>方向</span><select id="oDir"><option value="-1">做空</option><option value="1">做多</option><option value="both">做多＋做空都測</option></select></label>
@@ -663,9 +665,12 @@ function readBt() {
     src: $("#bSrc").value, dir: +$("#bDir").value,
     en: { d: $("#bInD").value, p: $("#bInP").value }, ex: { d: $("#bOutD").value, p: $("#bOutP").value },
     sl: +$("#bSL").value || 0, tp: +$("#bTP").value || 0, cost: +$("#bCost").value || 0,
-    ord: +$("#bEvtOrd").value, mkt: $("#bMkt").value, fut: $("#bFut").value, rf: readRf("#bRfLo", "#bRfHi"), amt: +$("#bAmt").value || 0, px: +$("#bPx").value || 0, vol: +$("#bVol").value || 0, year: +$("#bYear").value
+    ord: +$("#bEvtOrd").value, mkt: $("#bMkt").value, fut: $("#bFut").value, rf: readRf("#bRfLo", "#bRfHi"), amt: +$("#bAmt").value || 0, cause: $("#bSrc").value === "evt" ? $("#bCause").value : "", px: +$("#bPx").value || 0, vol: +$("#bVol").value || 0, year: +$("#bYear").value
   };
 }
+// 進處置原因：依公告文字判斷第一款是漲幅或跌幅；都沒有＝非價格（成交量、週轉率、券商等）
+function evCause(e) { const t = (e.tw || "") + " " + (e.why || ""); const up = /漲幅/.test(t), dn = /跌幅/.test(t); return up && !dn ? "UP" : dn && !up ? "DN" : up && dn ? "MIX" : "OTH"; }
+const CAUSE_TXT = { UP: "漲幅進", DN: "跌幅進", OTH: "非價格", MIX: "漲跌皆有" };
 // 每檔股票的處置觸發日（處置開始前一天）
 const TRIG = {}; for (const e of EV) (TRIG[e.s] = TRIG[e.s] || []).push(e.st - 1);
 // 候選樣本：{j, T(觸發日序號), n(處置天數), rg}
@@ -679,7 +684,9 @@ function candidates(c) {
       if (c.vol && (e.v == null || e.v < c.vol)) continue;
       if (!c.noGroup && c.mkt && sMkt(e.s) !== c.mkt) continue;
       if (!c.noGroup && c.fut !== "" && c.fut != null && sFut(e.s) !== +c.fut) continue;
-      out.push({ j: e.s, T, n: e.n, rg: e.st >= RI ? 1 : 0, ord: e.o, v: e.v });
+      const cause = evCause(e);
+      if (!c.noGroup && c.cause && cause !== c.cause) continue;
+      out.push({ j: e.s, T, n: e.n, rg: e.st >= RI ? 1 : 0, ord: e.o, v: e.v, cause });
     }
   } else {
     for (const s of SIG) {
@@ -782,6 +789,7 @@ function syncSrc() {
   const sig = $("#bSrc").value === "sig";
   for (const id of ["#bInD", "#bOutD"]) for (const o of $(id).options) o.disabled = sig && (o.value === "DL" || o.value[0] === "X");
   for (const id of ["#bInD", "#bOutD"]) if ($(id).selectedOptions[0]?.disabled) $(id).value = "D1";
+  $("#bCause").disabled = sig; if (sig) $("#bCause").title = "「所有聽牌」樣本還沒有處置公告，無法分原因"; else $("#bCause").title = "";
   $("#bEvtOrd").options[1].text = sig ? "若處置是第一次" : "第一次處置";
   $("#bEvtOrd").options[2].text = sig ? "若處置是再次（30 日內處置過）" : "再次處置";
 }
@@ -869,6 +877,7 @@ function renderGroups(c) {
   const rows = []; // [label, filterFn]
   const isEvt = c.src === "evt";
   const dims = [];
+  if (isEvt) dims.push(["進處置原因", [["漲幅進", k => k.cause === "UP"], ["跌幅進", k => k.cause === "DN"], ["非價格", k => k.cause === "OTH"]]]);
   dims.push(["處置次數", [[isEvt ? "第一次處置" : "若處置：第一次", k => k.ord === 1], [isEvt ? "再次處置" : "若處置：再次", k => k.ord === 2]]]);
   dims.push(["市場", [["上市", k => sMkt(k.j) === "上市"], ["上櫃", k => sMkt(k.j) === "上櫃"]]]);
   if (DATA.meta.hasFut) dims.push(["股票期貨", [["有股期", k => sFut(k.j) === 1], ["無股期", k => sFut(k.j) === 0]]]);
@@ -898,9 +907,11 @@ const O_GROUPS = {
   ord: [["第一次處置", k => k.ord === 1, { ord: 1 }], ["再次處置", k => k.ord === 2, { ord: 2 }]],
   fut: [["有股期", k => sFut(k.j) === 1, { fut: "1" }], ["無股期", k => sFut(k.j) === 0, { fut: "0" }]],
 };
+O_GROUPS.cause = [["漲幅進", k => k.cause === "UP", { cause: "UP" }], ["跌幅進", k => k.cause === "DN", { cause: "DN" }], ["非價格", k => k.cause === "OTH", { cause: "OTH" }]];
+O_GROUPS.causeord = O_GROUPS.cause.flatMap(([a, fa, pa]) => O_GROUPS.ord.map(([b, fb, pb]) => [a + "・" + b, k => fa(k) && fb(k), Object.assign({}, pa, pb)]));
 O_GROUPS.ordfut = O_GROUPS.ord.flatMap(([a, fa, pa]) => O_GROUPS.fut.map(([b, fb, pb]) => [a + "・" + b, k => fa(k) && fb(k), Object.assign({}, pa, pb)]));
 function readOptFilter() {
-  return Object.assign(readBt(), { src: $("#oSrc").value, ord: +$("#oOrd").value, mkt: $("#oMkt").value, fut: $("#oFut").value, rf: readRf("#oRfLo", "#oRfHi") });
+  return Object.assign(readBt(), { src: $("#oSrc").value, ord: +$("#oOrd").value, mkt: $("#oMkt").value, fut: $("#oFut").value, rf: readRf("#oRfLo", "#oRfHi"), cause: $("#oSrc").value === "evt" ? $("#oCause").value : "" });
 }
 $("#oRun").onclick = () => {
   const c = readOptFilter();
@@ -943,13 +954,13 @@ function renderOpt() {
   let thin = false;
   if (!ranked.length) { minN = 1; ranked = out.filter(r => isFinite(val(r))).sort((a, b) => val(b) - val(a)); thin = ranked.length > 0; }
   const maxN = Math.max(0, ...out.map(r => (m === "sumOld" ? r.old : m === "sumNew" ? r.new : r[key]).n || 0));
-  const fdesc = [c.src === "evt" ? "實際進處置" : "所有聽牌", c.ord ? (c.ord === 2 ? "再次處置" : "第一次處置") : "", c.mkt, c.fut === "1" ? "有股期" : c.fut === "0" ? "無股期" : "", c.amt ? `成交金額 ≥ ${c.amt} 億` : "", rfText(c.rf)].filter(Boolean).join("・");
+  const fdesc = [c.src === "evt" ? "實際進處置" : "所有聽牌", c.ord ? (c.ord === 2 ? "再次處置" : "第一次處置") : "", c.mkt, c.fut === "1" ? "有股期" : c.fut === "0" ? "無股期" : "", c.cause ? CAUSE_TXT[c.cause] : "", c.amt ? `成交金額 ≥ ${c.amt} 億` : "", rfText(c.rf)].filter(Boolean).join("・");
   const regName = { all: "全部", old: "舊制", new: "新制" }[m === "sumOld" ? "old" : m === "sumNew" ? "new" : REG];
   $("#oSub").innerHTML = (thin ? `<span class="chip l1">樣本不足</span> ${esc(regName)}下這個分類每組最多只有 ${maxN} 筆，沒有一組達到最少交易數 ${minN0}，下面照列但僅供參考（可把上方分水嶺切到「全部」或「舊制」看長期結果）。<br>` : "") +
     esc(`樣本：${fdesc}。` + (c.src === "evt" ? "標「事後」的組合在 T 收盤前進場，用到收盤後才公告的處置資訊，不能直接實戰。" : "") + `共 ${out.length} 組，${thin ? 0 : ranked.length} 組達最少交易數；依「${regName}」排序。點一列可帶回策略回測`);
   if (!ranked.length) $("#oSub").innerHTML += `<br><span class="chip l1">沒有結果</span> ${esc(regName)}下這個分類沒有任何交易，請改分水嶺或放寬篩選。`;
   const cell = s => s.n ? `<td class="n ${cls(s.mean)} sep">${fmtP(s.mean)}</td><td class="n ${cls(s.sum)}">${fmt(s.sum, 0)}%</td><td class="n mut">${s.n}</td>` : `<td class="n mut sep">–</td><td class="n mut">–</td><td class="n mut">0</td>`;
-  const backCfg = (r, extra) => Object.assign({ bSrc: c.src, bEvtOrd: String(c.ord || 0), bMkt: c.mkt, bFut: c.fut, bRfLo: c.rf?.lo ?? "", bRfHi: c.rf?.hi ?? "", bRfP: c.rf && (c.rf.lo != null || c.rf.hi != null) ? "custom" : "", bDir: String(r.dir), bInD: r.en.d, bInP: r.en.p, bOutD: r.ex.d, bOutP: r.ex.p, bSL: r.sl, bTP: r.tp }, extra || {});
+  const backCfg = (r, extra) => Object.assign({ bSrc: c.src, bCause: c.cause || "", bEvtOrd: String(c.ord || 0), bMkt: c.mkt, bFut: c.fut, bRfLo: c.rf?.lo ?? "", bRfHi: c.rf?.hi ?? "", bRfP: c.rf && (c.rf.lo != null || c.rf.hi != null) ? "custom" : "", bDir: String(r.dir), bInD: r.en.d, bInP: r.en.p, bOutD: r.ex.d, bOutP: r.ex.p, bSL: r.sl, bTP: r.tp }, extra || {});
   // 分類各自的前 5 名
   const groups = optRes.groups || [];
   $("#oGrpPanel").hidden = !groups.length;
@@ -962,7 +973,7 @@ function renderOpt() {
       rows.forEach((r, i) => { const s = r[key]; h += `<tr class="click${i === 0 ? " gsep" : ""}" data-g="${gi}" data-i="${r.oi}"><td>${i === 0 ? `<b>${lb}</b>` : ""}</td><td class="n mut">${i + 1}</td><td><span class="chip ${r.dir < 0 ? "l2" : "l1"}">${r.dir < 0 ? "空" : "多"}</span></td><td>${codeName(r.en)}</td><td>${codeName(r.ex)}</td><td class="n">${r.sl || "–"}</td><td class="n">${r.tp || "–"}</td><td class="n">${s.n}</td><td class="n">${fmt(s.up, 1)}%</td><td class="n ${cls(s.mean)}">${fmtP(s.mean)}</td><td class="n">${fmt(s.t)}</td>${cell(r.old)}${cell(r.new)}</tr>`; });
     });
     $("#oGrp").innerHTML = h + "</tbody>";
-    $$("#oGrp tr.click").forEach(tr => tr.onclick = () => { const g = groups[+tr.dataset.g][2]; const ex = {}; if (g.ord) ex.bEvtOrd = String(g.ord); if (g.fut) ex.bFut = g.fut; applyCfg(backCfg(out[+tr.dataset.i], ex)); setTab("bt"); });
+    $$("#oGrp tr.click").forEach(tr => tr.onclick = () => { const g = groups[+tr.dataset.g][2]; const ex = {}; if (g.ord) ex.bEvtOrd = String(g.ord); if (g.fut) ex.bFut = g.fut; if (g.cause) ex.bCause = g.cause; applyCfg(backCfg(out[+tr.dataset.i], ex)); setTab("bt"); });
   }
   $("#oTable").innerHTML = `<thead><tr><th colspan="6"></th><th colspan="5" class="grp">${{ all: "全部", old: "舊制", new: "新制" }[REG]}</th><th colspan="3" class="grp sep">舊制（8/10 前）</th><th colspan="3" class="grp sep">新制（8/10 起）</th></tr><tr><th>#</th><th>方向</th><th>進場</th><th>出場</th><th class="n">停損</th><th class="n">停利</th><th class="n">筆數</th><th class="n">勝率</th><th class="n">平均</th><th class="n">PF</th><th class="n">t 值</th><th class="n sep">平均</th><th class="n">累積</th><th class="n">n</th><th class="n sep">平均</th><th class="n">累積</th><th class="n">n</th></tr></thead><tbody>` +
     ranked.slice(0, 40).map((r, i) => { const s = r[key]; return `<tr class="click" data-i="${out.indexOf(r)}"><td class="n mut">${i + 1}</td><td><span class="chip ${r.dir < 0 ? "l2" : "l1"}">${r.dir < 0 ? "空" : "多"}</span></td><td>${codeName(r.en)}${c.src === "evt" && dayOff(r.en.d, 5) * 2 + (r.en.p === "c") <= 1 ? ' <span class="chip l3" title="T 收盤前進場等於事先知道會進處置">事後</span>' : ""}</td><td>${codeName(r.ex)}</td><td class="n">${r.sl || "–"}</td><td class="n">${r.tp || "–"}</td><td class="n">${s.n}</td><td class="n">${fmt(s.up, 1)}%</td><td class="n ${cls(s.mean)}">${fmtP(s.mean)}</td><td class="n">${fmt(s.pf)}</td><td class="n">${fmt(s.t)}</td>${cell(r.old)}${cell(r.new)}</tr>`; }).join("") + "</tbody>";
@@ -1144,6 +1155,7 @@ function actualCell(r, nd, lv) {
   else if (hitP.length) tag = `<br><span class="chip l2">價已達第三～五款，量未達</span>`;
   return `<span class="${cls(pct)}">${fmt(c)}</span> <span class="mut" style="font-size:11px">${fmtP(pct, 1)}</span>${v != null ? `<br><span class="mut" style="font-size:11px">${v.toLocaleString()} 張</span>` : ""}${tag}`;
 }
+function causeChip(e) { const c = evCause(e); return `<span class="chip ${c === "UP" ? "up" : c === "DN" ? "down" : "mut"}" title="依處置公告文字判斷">${CAUSE_TXT[c]}</span>`; }
 function renderFc() {
   const F = DATA.forecast, t = F.t, showInd = $("#fcShowInd").checked;
   const lag = t < D.length - 1;
@@ -1182,7 +1194,7 @@ function renderFc() {
   $("#fc3").innerHTML = curEv.length ? `<thead><tr><th>代號</th><th>名稱</th><th>次別</th><th class="n">撮合</th><th>開始</th><th>結束</th><th class="n">明天是</th><th class="n">剩餘</th><th class="n">歷史該天上漲率</th><th class="n">歷史該天當沖空</th><th>處置原因</th></tr></thead><tbody>` +
     curEv.sort((a, b) => a.en - b.en).map(e => {
       const k = t + 1 - e.st + 1, left = e.en - t; const lbl = "D" + k; const a = get(fwd, lbl), b = get(oc, lbl);
-      return `<tr><td class="num">${esc(sId(e.s))}</td><td>${esc(sName(e.s))}</td><td>${e.o === 2 ? '<span class="chip l1">再次</span>' : '<span class="chip l3">第一次</span>'}</td><td class="n">${e.m ? e.m + " 分" : "–"}</td><td class="num">${dateAt(e.st)}</td><td class="num">${dateAt(e.en)}</td><td class="n">${k >= 1 && k <= e.n ? `D${k}／共 ${e.n} 天` : k > e.n ? "出關" : "未開始"}</td><td class="n">${Math.max(0, left)}</td><td class="n">${a && a.n ? fmt(a.up, 1) + "%" : "–"}</td><td class="n ${b && b.n ? cls(-b.mean) : ""}">${b && b.n ? fmtP(-b.mean) : "–"}</td><td style="white-space:normal;min-width:220px;font-size:12px" class="mut">${esc(e.why || e.tw)}</td></tr>`;
+      return `<tr><td class="num">${esc(sId(e.s))}</td><td>${esc(sName(e.s))}</td><td>${e.o === 2 ? '<span class="chip l1">再次</span>' : '<span class="chip l3">第一次</span>'} ${causeChip(e)}</td><td class="n">${e.m ? e.m + " 分" : "–"}</td><td class="num">${dateAt(e.st)}</td><td class="num">${dateAt(e.en)}</td><td class="n">${k >= 1 && k <= e.n ? `D${k}／共 ${e.n} 天` : k > e.n ? "出關" : "未開始"}</td><td class="n">${Math.max(0, left)}</td><td class="n">${a && a.n ? fmt(a.up, 1) + "%" : "–"}</td><td class="n ${b && b.n ? cls(-b.mean) : ""}">${b && b.n ? fmtP(-b.mean) : "–"}</td><td style="white-space:normal;min-width:220px;font-size:12px" class="mut">${esc(e.why || e.tw)}</td></tr>`;
     }).join("") + "</tbody>" : '<tbody><tr><td class="empty">目前沒有處置中的股票</td></tr></tbody>';
 }
 $("#fcShowInd").onchange = renderFc;
